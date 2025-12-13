@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  mcpgateway:
+    image: ghcr.io/ibm/mcp-context-forge:0.6.0
+    container_name: mcpgateway
+    profiles: ["mcp"]
+    ports:
+      - "4444:4444"
+    environment:
+      MCPGATEWAY_UI_ENABLED: "true"
+      MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      HOST: "0.0.0.0"
+      PORT: "4444"
+      # --- Auth ---
+      BASIC_AUTH_USER: "${MCP_ADMIN_USER:-admin}"
+      BASIC_AUTH_PASSWORD: "${MCP_ADMIN_PASS:-changeme}"
+      AUTH_REQUIRED: "true"
+      JWT_SECRET_KEY: "${MCP_JWT_SECRET:-please-change-me}"
+      # --- DB ---
+      # 使用相对路径（容器工作目录内），最不容易踩权限坑
+      DATABASE_URL: "sqlite:///./mcp.db" 
+      # --- Optional: enable basic OTEL traces to Phoenix/Jaeger/etc if you have it
+      # OTEL_ENABLE_OBSERVABILITY: "false"
+      # OTEL_TRACES_EXPORTER: "otlp"
+      # OTEL_EXPORTER_OTLP_ENDPOINT: "http://host.docker.internal:4317"
+    # ⚠️ 先注释掉这一行，等验证通过再做持久化  
+    volumes:
+      - mcpgwdata:/app  # 将工作目录持久化（镜像里工作目录一般是 /app）
+      #- ./data/mcp:/data
+    # Helpful on macOS/Windows for reaching host services; harmless on Linux
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  mcpgwdata:
