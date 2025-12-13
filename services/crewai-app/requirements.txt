@@ -1,0 +1,9 @@
+# CrewAI + MCP client
+crewai>=0.54.0
+crewai-tools[mcp]>=0.2.0
+
+# Optional: OpenAI client (CrewAI uses it under the hood)
+openai>=1.40.0
+
+# Logging helpers
+rich>=13.7.1

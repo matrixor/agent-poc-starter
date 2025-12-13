@@ -1,0 +1,10 @@
+fastmcp==2.12.3
+starlette>=0.40
+uvicorn>=0.30
+crewai>=0.74
+crewai-tools>=0.14
+langchain-openai>=0.1.24
+yfinance>=0.2.43
+pandas>=2.2
+matplotlib>=3.8
+pydantic>=2.7

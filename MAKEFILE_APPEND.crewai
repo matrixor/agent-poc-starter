@@ -1,0 +1,12 @@
+# --- CrewAI + MCP profile helpers ---
+crewai-build:
+	docker compose -f docker-compose.yml -f docker-compose.mcp.yml -f docker-compose.crewai.yml --profile mcp --profile rag --profile crewai build
+
+crewai-up:
+	docker compose -f docker-compose.yml -f docker-compose.mcp.yml -f docker-compose.crewai.yml --profile mcp --profile rag --profile crewai up -d mcpgateway mcp-sample ollama crewai-app
+
+crewai-logs:
+	docker compose -f docker-compose.yml -f docker-compose.mcp.yml -f docker-compose.crewai.yml logs -f crewai-app
+
+crewai-down:
+	docker compose -f docker-compose.yml -f docker-compose.mcp.yml -f docker-compose.crewai.yml down

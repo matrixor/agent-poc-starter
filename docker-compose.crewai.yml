@@ -1,0 +1,23 @@
+services:
+  crewai-app:
+    build:
+      context: services/crewai-app
+      dockerfile: Dockerfile
+    profiles: ["crewai"]
+    depends_on:
+      - mcpgateway   # from docker-compose.mcp.yml
+      - mcp-sample    # from docker-compose.mcp.yml
+      - ollama        # from base docker-compose.yml (profile: rag)
+    environment:
+      # LLM via Ollama's OpenAI-compatible endpoint
+      - OPENAI_MODEL=ollama/llama3.2:3b
+      - OPENAI_BASE_URL=http://ollama:11434
+      - OPENAI_API_KEY=ollama
+
+      # Point to the sample MCP server over Streamable HTTP (inside Docker network)
+      #- MCP_URL=${MCP_URL:-http://mcp-sample:8000/mcp}
+      - MCP_URL=http://mcpgateway:4444/mcp
+      - MCP_BEARER=${MCP_BEARER}
+      - MCP_BASIC=${MCP_BASIC}
+      #
+    command: ["python", "-m", "app.crew"]

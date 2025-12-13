@@ -1,0 +1,189 @@
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "tools": [
+            {
+                "id": "3255e8885e014be1b38b0351635b45d2",
+                "originalName": "ping",
+                "url": "http://mcp-sample:8000/mcp/",
+                "requestType": "STREAMABLEHTTP",
+                "integrationType": "MCP",
+                "inputSchema": {
+                    "properties": {},
+                    "type": "object"
+                },
+                "annotations": {},
+                "jsonpathFilter": "",
+                "createdAt": "2025-09-12T21:56:06.267728",
+                "updatedAt": "2025-09-12T21:56:06.267731",
+                "enabled": true,
+                "reachable": true,
+                "gatewayId": "558212d5572b4d3998075426e63d3352",
+                "executionCount": 0,
+                "metrics": {
+                    "totalExecutions": 0,
+                    "successfulExecutions": 0,
+                    "failedExecutions": 0,
+                    "failureRate": 0.0
+                },
+                "name": "sample-demo-mcp-ping",
+                "gatewaySlug": "sample-demo-mcp",
+                "customName": "ping",
+                "customNameSlug": "ping",
+                "tags": [],
+                "createdBy": "admin",
+                "createdFromIp": "172.18.0.1",
+                "createdVia": "federation",
+                "createdUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+                "federationSource": "Sample Demo MCP",
+                "version": 1
+            },
+            {
+                "id": "19d8685c872e409794d7552b9519480d",
+                "originalName": "echo",
+                "url": "http://mcp-sample:8000/mcp/",
+                "requestType": "STREAMABLEHTTP",
+                "integrationType": "MCP",
+                "inputSchema": {
+                    "properties": {
+                        "message": {
+                            "title": "Message",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "message"
+                    ],
+                    "type": "object"
+                },
+                "annotations": {},
+                "jsonpathFilter": "",
+                "createdAt": "2025-09-12T21:56:06.268035",
+                "updatedAt": "2025-09-12T21:56:06.268037",
+                "enabled": true,
+                "reachable": true,
+                "gatewayId": "558212d5572b4d3998075426e63d3352",
+                "executionCount": 1,
+                "metrics": {
+                    "totalExecutions": 1,
+                    "successfulExecutions": 1,
+                    "failedExecutions": 0,
+                    "failureRate": 0.0,
+                    "minResponseTime": 0.03617758800101001,
+                    "maxResponseTime": 0.03617758800101001,
+                    "avgResponseTime": 0.03617758800101001,
+                    "lastExecutionTime": "2025-09-13T00:36:39.929735"
+                },
+                "name": "sample-demo-mcp-echo",
+                "gatewaySlug": "sample-demo-mcp",
+                "customName": "echo",
+                "customNameSlug": "echo",
+                "tags": [],
+                "createdBy": "admin",
+                "createdFromIp": "172.18.0.1",
+                "createdVia": "federation",
+                "createdUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+                "federationSource": "Sample Demo MCP",
+                "version": 1
+            },
+            {
+                "id": "a79d46746b5544b4b6e8579ae6584829",
+                "originalName": "now",
+                "url": "http://mcp-sample:8000/mcp/",
+                "requestType": "STREAMABLEHTTP",
+                "integrationType": "MCP",
+                "inputSchema": {
+                    "properties": {
+                        "tz": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "default": "UTC",
+                            "title": "Tz"
+                        }
+                    },
+                    "type": "object"
+                },
+                "annotations": {},
+                "jsonpathFilter": "",
+                "createdAt": "2025-09-12T21:56:06.268130",
+                "updatedAt": "2025-09-12T21:56:06.268142",
+                "enabled": true,
+                "reachable": true,
+                "gatewayId": "558212d5572b4d3998075426e63d3352",
+                "executionCount": 3,
+                "metrics": {
+                    "totalExecutions": 3,
+                    "successfulExecutions": 3,
+                    "failedExecutions": 0,
+                    "failureRate": 0.0,
+                    "minResponseTime": 0.04862990599940531,
+                    "maxResponseTime": 0.09868635699967854,
+                    "avgResponseTime": 0.07065680599953339,
+                    "lastExecutionTime": "2025-09-13T00:36:34.807441"
+                },
+                "name": "sample-demo-mcp-now",
+                "gatewaySlug": "sample-demo-mcp",
+                "customName": "now",
+                "customNameSlug": "now",
+                "tags": [],
+                "createdBy": "admin",
+                "createdFromIp": "172.18.0.1",
+                "createdVia": "federation",
+                "createdUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+                "federationSource": "Sample Demo MCP",
+                "version": 1
+            },
+            {
+                "id": "0ffd1a9dd0554702a84e8d36d2c7b034",
+                "originalName": "analyze_stock",
+                "url": "http://mcp-fin-analyst:8000/mcp",
+                "requestType": "STREAMABLEHTTP",
+                "integrationType": "MCP",
+                "inputSchema": {
+                    "properties": {
+                        "query": {
+                            "title": "Query",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "query"
+                    ],
+                    "type": "object"
+                },
+                "annotations": {},
+                "jsonpathFilter": "",
+                "createdAt": "2025-09-13T02:29:04.345597",
+                "updatedAt": "2025-09-13T02:29:04.345603",
+                "enabled": true,
+                "reachable": true,
+                "gatewayId": "a49adc40487e4cdfa9cd9ac999b7eb8b",
+                "executionCount": 0,
+                "metrics": {
+                    "totalExecutions": 0,
+                    "successfulExecutions": 0,
+                    "failedExecutions": 0,
+                    "failureRate": 0.0
+                },
+                "name": "analyze-stock-analyze-stock",
+                "gatewaySlug": "analyze-stock",
+                "customName": "analyze_stock",
+                "customNameSlug": "analyze-stock",
+                "tags": [],
+                "createdBy": "admin",
+                "createdFromIp": "172.18.0.1",
+                "createdVia": "federation",
+                "createdUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+                "federationSource": "analyze_stock",
+                "version": 1
+            }
+        ]
+    },
+    "id": 1
+}

@@ -1,0 +1,21 @@
+services:
+  mcp-fin-analyst:
+    build:
+      context: ./services/mcp-fin-analyst
+      dockerfile: Dockerfile
+    container_name: mcp-fin-analyst
+    profiles: ["stock", "mcp"]
+    environment:
+      PYTHONIOENCODING: "utf-8"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o}"
+    ports:
+      - "8082:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/health'); sys.exit(0)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
