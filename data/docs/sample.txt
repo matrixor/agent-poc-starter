@@ -1,0 +1,10 @@
+This is a sample document for the Agent PoC Starter.
+It demonstrates a minimal RAG pipeline:
+- Ingest text files from /data/docs
+- Store embeddings in Qdrant
+- Answer questions using retrieved context + an LLM (OpenAI)
+
+To run:
+1) docker compose --profile rag up -d
+2) POST /ingest
+3) POST /ask {"query": "What does this project do?"}

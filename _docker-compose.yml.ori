@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  dev:
+    build:
+      context: .devcontainer
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace:cached
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
+    environment:
+      - PIP_DISABLE_PIP_VERSION_CHECK=1
+    command: bash -lc "sleep infinity"
+
+  # Base cache/queue that many PoCs want
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  # -------- RAG profile --------
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: ["rag"]
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  api:
+    build:
+      context: services/api
+      dockerfile: Dockerfile
+    profiles: ["rag"]
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - CHAT_MODEL=${CHAT_MODEL:-gpt-4o-mini}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    depends_on:
+      - qdrant
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/docs:/data/docs:ro
+
+  # -------- MCP profile --------
+  mcp-gateway:
+    build:
+      context: services/mcp-gateway
+      dockerfile: Dockerfile
+    profiles: ["mcp"]
+    ports:
+      - "6000:6000"
+
+volumes:
+  qdrant_data:
