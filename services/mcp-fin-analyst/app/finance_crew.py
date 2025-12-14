@@ -12,7 +12,7 @@ class QueryAnalysisOutput(BaseModel):
     timeframe: str  # e.g. '6mo','1y','ytd'
     action: str     # e.g. 'plot_performance'
 
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o"), temperature=0)
+llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o"), temperature=0, streaming=False)
 
 # PoC: run code inside the container (no docker-in-docker)
 code_runner = CodeInterpreterTool(unsafe_mode=True)

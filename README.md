@@ -5,7 +5,7 @@ You can spin up isolated stacks for **RAG**, **MCP gateway/registry (placeholder
 
 ## What you get
 - **VS Code Dev Container**: code _inside_ a container (Python + Node) with Docker socket passthrough.
-- **Compose profiles** to toggle stacks: `rag`, `mcp`.
+- **Compose profiles** to toggle stacks: `rag`, `mcp`, `tsg`.
 - Minimal **RAG API** (FastAPI + Qdrant) with `/ingest` and `/ask` endpoints.
 - **MCP gateway placeholder** service so you can drop in any real MCP gateway/registry later.
 - Shared **Redis** for simple caching/queues if you need them.
@@ -66,16 +66,29 @@ docker compose --profile mcp up -d
 # placeholder TCP listener on :6000 (replace with your real MCP gateway/registry)
 ```
 
+
+### TSG Officer UI (LangGraph + Streamlit)
+```bash
+docker compose --profile tsg up -d --build tsg-officer
+# ui: http://localhost:8501
+```
+
+Env toggles (optional):
+- `TSG_LLM_PROVIDER` = `mock` (default) or `openai`
+- `TSG_OPENAI_MODEL` = e.g. `gpt-4o-mini`
+
 Stop a stack:
 ```bash
 docker compose --profile rag down
 docker compose --profile mcp down
+docker compose --profile tsg down
 ```
 
 See logs:
 ```bash
 docker compose logs -f api
 docker compose logs -f mcp-gateway
+docker compose logs -f tsg-officer
 ```
 
 ---
@@ -116,13 +129,19 @@ agent-poc-starter/
 │  │  ├─ requirements.txt
 │  │  └─ app/
 │  │     └─ main.py
-│  └─ mcp-gateway/
+│  ├─ mcp-gateway/
+│  │  ├─ Dockerfile
+│  │  └─ server.js        # placeholder
+│  └─ tsg-officer/
 │     ├─ Dockerfile
-│     └─ server.js        # placeholder
+│     ├─ app/
+│     │  └─ streamlit_app.py
+│     └─ tsg_officer/...
 ├─ data/
-│  └─ docs/
-│     └─ sample.txt
-├─ .env.example
+│  ├─ docs/
+│  │  └─ sample.txt
+│  └─ tsg-officer/
+├─ .env
 ├─ docker-compose.yml
 └─ Makefile
 ```

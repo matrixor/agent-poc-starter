@@ -1,0 +1,40 @@
+{
+  "properties": {
+    "mermaid": {
+      "description": "Mermaid flowchart code (flowchart TD ...).",
+      "title": "Mermaid",
+      "type": "string"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title"
+    },
+    "assumptions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "questions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "mermaid"
+  ],
+  "title": "FlowchartModel",
+  "type": "object"
+}

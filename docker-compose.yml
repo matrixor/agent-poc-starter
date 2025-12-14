@@ -15,6 +15,33 @@ services:
       - PIP_DISABLE_PIP_VERSION_CHECK=1
     command: bash -lc "sleep infinity"
 
+  # -------- TSG Officer (LangGraph + Streamlit) --------
+  tsg-officer:
+    build:
+      context: services/tsg-officer
+      dockerfile: Dockerfile
+    profiles: ["tsg"]
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONIOENCODING=utf-8
+      - TSG_LLM_PROVIDER=${TSG_LLM_PROVIDER:-mock}
+      - TSG_OPENAI_MODEL=${TSG_OPENAI_MODEL:-gpt-4o-mini}
+      - TSG_CHECKPOINT_DB=/data/.tsg_checkpoints.sqlite
+      # Used only when TSG_LLM_PROVIDER=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Optional (enterprise proxies / compatible endpoints)
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    volumes:
+      - ./services/tsg-officer:/app
+      - ./data/tsg-officer:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   # Base cache/queue that many PoCs want
   redis:
     image: redis:7
