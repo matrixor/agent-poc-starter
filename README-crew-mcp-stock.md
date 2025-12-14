@@ -82,7 +82,7 @@ curl -s -X POST http://localhost:4444/rpc \
 curl -s -X POST http://localhost:4444/rpc \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
-        "name":"analyze_stock",
+        "name":"analyze_stock_analyze_stock",
         "arguments":{"query":"绘制 AAPL 近 6 个月走势"}
       }}' | jq
 ```
