@@ -80,15 +80,6 @@ curl -s -X POST http://localhost:4444/rpc \
 ```bash
 # 3) 调用工具（自然语言入参）
 curl -s -X POST http://localhost:4444/rpc \
-  -H "Authorization: Bear TOKEN:$TOKEN" 2>/dev/null | head
-```
-
-Oops—I must correct mistake: In the final content, I had a typo "Authorization: Bear TOKEN:$TOKEN". Need to write proper command.
-
-Let's produce correct tool call command:
-
-```bash
-curl -s -X POST http://localhost:4444/rpc \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
         "name":"analyze_stock",
@@ -99,7 +90,7 @@ curl -s -X POST http://localhost:4444/rpc \
 We should show expected response shape and result. Then copy the image:
 
 ```bash
-docker cp mcp-fin-analyst:/app/app/out/output.png ./output.png
+docker cp mcp-fin-analyst:/app/output.png ./output.png
 ```
 
 Add alt queries, e.g., TSLA 1y. Provide quick health check for mcp-fin-analyst.
