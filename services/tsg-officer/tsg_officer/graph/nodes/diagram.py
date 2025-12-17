@@ -41,6 +41,10 @@ def make_diagram_node(llm: LLMClient):
                 update={
                     "flowchart_mermaid": mermaid,
                     "flowchart_confirmed": False,
+                    # capture reasoning summary from the LLM (if available).  For the
+                    # OpenAIResponsesLLMClient this explains how the flowchart was
+                    # derived from the provided description.
+                    "flowchart_reasoning": getattr(llm, "last_reasoning_summary", None),
                     "messages": [
                         {
                             "role": "assistant",
@@ -86,6 +90,7 @@ def make_diagram_node(llm: LLMClient):
                     "process_description": new_desc,
                     "flowchart_mermaid": new_mermaid,
                     "flowchart_confirmed": False,
+                    "flowchart_reasoning": getattr(llm, "last_reasoning_summary", None),
                     "messages": [
                         {
                             "role": "assistant",

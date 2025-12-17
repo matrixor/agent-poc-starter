@@ -24,8 +24,6 @@ It is intentionally **UI-first (Streamlit)** and **workflow-first (LangGraph)**:
 - Streamlit provides a **ChatGPT-like** interface using `st.chat_message` + `st.chat_input`.
 - LangGraph provides the **state machine + human-in-the-loop** workflow (pause/resume with interrupts).
 
-> ✅ No Teams/Slack integration in this scaffold.
-
 ---
 
 ## Quickstart

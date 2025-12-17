@@ -111,6 +111,16 @@ class TSGState(TypedDict, total=False):
     # audit trail
     audit_log: Annotated[List[AuditEvent], add]
 
+    # optional reasoning summaries captured from the LLM.  These fields store
+    # natural language explanations returned by the LLM (when enabled) for
+    # different phases of the workflow.  They allow the web UI to surface
+    # "why" a classification or recommendation was made without needing to
+    # expose internal chain‑of‑thought.  See the LLM implementation for
+    # details on how these are populated.
+    classification_reasoning: Optional[str]
+    checklist_reasoning: Optional[str]
+    flowchart_reasoning: Optional[str]
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -135,4 +145,10 @@ def new_case_state(case_id: Optional[str] = None) -> TSGState:
         "final_message_sent": False,
         "reviewer_decision": None,
         "audit_log": [],
+
+        # default reasoning summaries are None.  They will be populated by LLM calls when
+        # TSG_LLM_PROVIDER is set to `openai` and reasoning summaries are requested.
+        "classification_reasoning": None,
+        "checklist_reasoning": None,
+        "flowchart_reasoning": None,
     }

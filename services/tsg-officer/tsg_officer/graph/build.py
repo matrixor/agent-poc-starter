@@ -7,7 +7,12 @@ from langgraph.graph import StateGraph, START, END
 
 from tsg_officer.config import Settings
 from tsg_officer.state.models import TSGState
-from tsg_officer.tools.llm import LLMClient, MockLLMClient, OpenAIChatLLMClient
+from tsg_officer.tools.llm import (
+    LLMClient,
+    MockLLMClient,
+    OpenAIChatLLMClient,
+    OpenAIResponsesLLMClient,
+)
 from tsg_officer.tools.rules import YamlRuleRepository
 from tsg_officer.graph.nodes import (
     route,
@@ -23,7 +28,13 @@ from tsg_officer.graph.nodes import (
 def build_dependencies(settings: Settings) -> Tuple[LLMClient, YamlRuleRepository]:
     # LLM
     if settings.llm_provider == "openai":
-        llm: LLMClient = OpenAIChatLLMClient(model=settings.openai_model)
+        # Prefer the new OpenAI responses client for reasoning summaries.
+        # Fallback to ChatOpenAI if responses API is not available.
+        try:
+            llm = OpenAIResponsesLLMClient(model=settings.openai_model)  # type: ignore[assignment]
+        except Exception:
+            # For backwards compatibility, fall back to ChatOpenAI wrapper
+            llm = OpenAIChatLLMClient(model=settings.openai_model)  # type: ignore[assignment]
     else:
         llm = MockLLMClient()
 

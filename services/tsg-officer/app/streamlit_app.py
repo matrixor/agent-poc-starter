@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dotenv import load_dotenv
+load_dotenv()  # loads .env into os.environ
+
+
 import json
 import uuid
 from typing import Any, Dict, List
@@ -58,6 +62,11 @@ def sidebar(graph):
         placeholder="Paste here if you don't want to paste into chat...",
     )
     if st.sidebar.button("Attach submission text"):
+        """When the user attaches submission text from the sidebar, update the case
+        state and, if appropriate, feed it as the answer to the current intake
+        question.  This enables end‑to‑end progression without requiring an extra
+        chat message.  We also update the local chat history to reflect any
+        new assistant messages returned by the graph."""
         if submission_text.strip():
             config = {"configurable": {"thread_id": st.session_state.thread_id}}
             # Merge into existing intake to avoid overwriting other collected fields
@@ -67,8 +76,59 @@ def sidebar(graph):
             except Exception:
                 intake = {}
             intake["submission_text"] = submission_text
+            # Persist the updated intake in the graph state
             graph.update_state(config, {"intake": intake})
+
+            # If we're currently paused waiting for a user answer (awaiting_resume),
+            # resume the graph with the submission text as the user's reply.  This
+            # mirrors the behaviour when the user replies in the chat UI.  The
+            # assistant's follow‑up messages (if any) are appended to the chat and
+            # the awaiting_resume flag is updated accordingly.
+            if st.session_state.get("awaiting_resume", False):
+                try:
+                    # Provide the submission text as the user's answer to resume the interrupt.
+                    result = graph.invoke(
+                        Command(
+                            resume=submission_text,
+                            update={"messages": [{"role": "user", "content": submission_text}]},
+                        ),
+                        config=config,
+                    )
+
+                    # Append any new assistant messages from the graph state to the chat.
+                    msgs: List[Dict[str, Any]] = result.get("messages", []) or []
+                    # Only append messages beyond the last seen index to avoid duplicates.
+                    start_idx = int(st.session_state.get("graph_messages_len", 0) or 0)
+                    for msg in msgs[start_idx:]:
+                        if msg.get("role") == "assistant":
+                            # record in local chat history
+                            st.session_state.chat.append({"role": "assistant", "content": msg.get("content", "")})
+                    # Update the graph message length snapshot
+                    st.session_state.graph_messages_len = len(msgs)
+
+                    # If the result contains another interrupt, append its question to the chat
+                    # and mark awaiting_resume = True.  Otherwise, we're ready for the next user turn.
+                    if "__interrupt__" in result and result["__interrupt__"]:
+                        intr = result["__interrupt__"][0]
+                        payload = getattr(intr, "value", intr)
+                        if isinstance(payload, dict) and payload.get("question"):
+                            q = payload["question"]
+                            hint = payload.get("hint", "")
+                            content = q + (f"\n\n*{hint}*" if hint else "")
+                        else:
+                            content = str(payload)
+                        st.session_state.chat.append({"role": "assistant", "content": content})
+                        st.session_state.awaiting_resume = True
+                    else:
+                        # No interrupt means we've progressed; clear awaiting_resume.
+                        st.session_state.awaiting_resume = False
+                except Exception:
+                    # If invoking fails (e.g. due to invalid API key), ignore and still show success message.
+                    st.session_state.awaiting_resume = False
+
             st.sidebar.success("Attached to case state (intake.submission_text).")
+            # Rerun the app so that the new state is reflected in the UI.
+            st.rerun()
 
     st.sidebar.divider()
     with st.sidebar.expander("Debug / Audit"):
@@ -81,8 +141,27 @@ def sidebar(graph):
             if snap.values.get("checklist_report"):
                 st.write("**Checklist report**")
                 st.json(snap.values.get("checklist_report"))
+
+            # Audit log
             st.write("**Audit log**")
             st.json(snap.values.get("audit_log", []))
+
+            # Display any captured reasoning summaries (classification/checklist/flowchart)
+            reasoning_items = []
+            class_reason = snap.values.get("classification_reasoning")
+            if class_reason:
+                reasoning_items.append(("Classification reasoning", class_reason))
+            checklist_reason = snap.values.get("checklist_reasoning")
+            if checklist_reason:
+                reasoning_items.append(("Checklist reasoning", checklist_reason))
+            flow_reason = snap.values.get("flowchart_reasoning")
+            if flow_reason:
+                reasoning_items.append(("Flowchart reasoning", flow_reason))
+            if reasoning_items:
+                st.write("**LLM reasoning summaries**")
+                for title, text in reasoning_items:
+                    with st.expander(title, expanded=False):
+                        st.markdown(text)
         except Exception as e:
             st.warning(f"No state yet for this thread: {e}")
 

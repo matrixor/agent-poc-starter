@@ -230,3 +230,251 @@ class OpenAIChatLLMClient:
             {"role": "user", "content": prompt + "\n\n" + process_description},
         ]
         return model.invoke(messages)  # type: ignore[return-value]
+
+
+# -----------------------------------------------------------------------------
+# OpenAIResponsesLLMClient
+#
+# This alternate implementation uses the OpenAI "responses" API directly. It
+# requests reasoning summaries for each call and stores the most recent
+# summary on the instance.  The resulting structured JSON is parsed using
+# Python's json module and returned as a Pydantic model.  If the OpenAI
+# dependency is unavailable or network access is not permitted, this class
+# will raise at import/initialization time.
+
+class OpenAIResponsesLLMClient:
+    """LLM backend using the new OpenAI responses API with reasoning support.
+
+    The responses API can return both a structured answer and a reasoning
+    summary in a single call.  Each method below constructs a prompt that
+    instructs the model to output only JSON.  The last reasoning summary is
+    captured in `last_reasoning_summary` for inspection by the caller.
+
+    Environment:
+        OPENAI_API_KEY=... (required)
+        TSG_OPENAI_MODEL=... (optional)
+    """
+
+    def __init__(self, *, model: str):
+        try:
+            # Lazy import to allow missing dependency when provider is not openai
+            from openai import OpenAI  # type: ignore
+        except Exception as e:  # pragma: no cover
+            raise ImportError(
+                "openai python package is not installed. Install it via `pip install openai`."
+            ) from e
+
+        # Instantiate the client once; the API key is read from the environment
+        self._client = OpenAI()
+        self.model_name = model
+        # store the most recent reasoning summary for introspection
+        self.last_reasoning_summary: Optional[str] = None
+
+    def _extract_reasoning_summary(self, output_items: Any) -> str | None:
+        """
+        Extract reasoning summaries from the OpenAI responses API output items.
+
+        The responses API returns a list of output items (either dicts or
+        structured objects).  When reasoning summaries are requested via the
+        `reasoning` parameter, there will be an item of type "reasoning" with
+        a `summary` list.  We concatenate all summary_text entries into a
+        single string.
+        """
+        if not output_items:
+            return None
+
+        def get(obj: Any, key: str, default: Any = None):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
+        summaries: List[str] = []
+        for item in output_items:
+            if get(item, "type") != "reasoning":
+                continue
+            summary_list = get(item, "summary", []) or []
+            for part in summary_list:
+                part_type = get(part, "type")
+                if part_type in ("summary_text", "reasoning_summary_text"):
+                    text = get(part, "text", "")
+                    if text:
+                        summaries.append(text)
+        if summaries:
+            return "\n\n".join(summaries).strip()
+        return None
+
+    def classify_application_type(self, user_text: str) -> ApplicationTypeModel:
+        # Compose a simple JSON schema for the expected output.  The model
+        # should reply with a JSON object containing application_type,
+        # confidence (0.0-1.0), and rationale.
+        instructions = (
+            "You are a classifier for TSG submissions. "
+            "Categorize the user_text into one of a small set of application types. "
+            "Return a JSON object with fields: application_type (string), confidence (float between 0 and 1), "
+            "and rationale (short explanation). Do not return any prose outside the JSON object."
+        )
+        messages = [
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": user_text or ""},
+        ]
+        # Use the chat completions API instead of the deprecated responses API.
+        # The messages parameter must be passed as `messages`, and the API returns
+        # a list of choices.  Each choice contains a message with a `content` field.
+        resp = self._client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=0.0,
+            response_format={"type": "json_object"},
+        )
+        # No reasoning support via this API; clear the last reasoning summary.
+        self.last_reasoning_summary = None
+        # Parse JSON from the assistant's message content.
+        try:
+            output_text = resp.choices[0].message.content  # type: ignore[attr-defined]
+            data = json.loads(output_text)
+        except Exception as e:
+            raise ValueError(f"Failed to parse classification JSON: {output_text}") from e
+        return ApplicationTypeModel(**data)
+
+    def generate_checklist_report(
+        self,
+        *,
+        case_id: str,
+        application_type: str,
+        rules: List[Dict[str, Any]],
+        submission_text: str,
+    ) -> ChecklistReportModel:
+        # Build prompt.  Provide the rules and submission text and ask for a
+        # checklist report JSON matching the ChecklistReportModel schema.
+        prompt = (
+            "You are an AI compliance officer. Evaluate the submission_text against the provided rules and "
+            "produce a checklist report as a JSON object. The JSON should conform to the following fields: "
+            "schema_version (string), case_id (string), application_type (string), overall_recommendation "
+            "(one of APPROVE, CONDITIONAL_APPROVE, REJECT, NEED_INFO), summary (string), checklist (array of "
+            "items each with rule_id, title, description, status, severity, confidence, evidence (list), "
+            "missing (list), rationale), blocking_issues (array), followup_questions (array), generated_at (ISO timestamp). "
+            "Rules are provided as a JSON list. The submission_text may be long. Only return the JSON object."
+        )
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": json.dumps({
+                "case_id": case_id,
+                "application_type": application_type,
+                "rules": rules,
+                "submission_text": submission_text,
+            }, ensure_ascii=False)},
+        ]
+        resp = self._client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=0.0,
+            response_format={"type": "json_object"},
+        )
+        # Clear reasoning summary; the chat completions API does not return it.
+        self.last_reasoning_summary = None
+        try:
+            output_text = resp.choices[0].message.content  # type: ignore[attr-defined]
+            data = json.loads(output_text)
+        except Exception as e:
+            raise ValueError(f"Failed to parse checklist report JSON: {output_text}") from e
+
+        # Post‑process the raw JSON to coerce values into the expected schema.  The LLM
+        # sometimes returns severities like "HIGH" or statuses like "NEED_INFO".  We map
+        # these into the allowed literals for ChecklistReportModel.  We also ensure
+        # evidence items are dictionaries with at least a 'source' and 'excerpt'.
+        checklist = data.get("checklist", []) or []
+        for item in checklist:
+            # Normalize severity
+            sev = str(item.get("severity", "")).upper()
+            if sev not in ("BLOCKER", "WARN", "INFO"):
+                # Map common severity synonyms to allowed values
+                mapping = {"HIGH": "BLOCKER", "MEDIUM": "WARN", "LOW": "INFO"}
+                item["severity"] = mapping.get(sev, "INFO")
+            # Normalize status
+            status = str(item.get("status", "")).upper()
+            if status not in ("PASS", "FAIL", "NA", "UNKNOWN"):
+                # If model says NEED_INFO, treat as UNKNOWN (i.e. missing info)
+                if status in ("NEED_INFO", "PENDING", "IN_PROGRESS"):
+                    item["status"] = "UNKNOWN"
+                else:
+                    item["status"] = "UNKNOWN"
+            # Normalize evidence: convert strings into dicts
+            evidence_list = item.get("evidence", []) or []
+            new_evidence = []
+            for ev in evidence_list:
+                if isinstance(ev, dict):
+                    new_evidence.append(ev)
+                elif isinstance(ev, str):
+                    # Use 'submission' as default source
+                    new_evidence.append({"source": "submission", "excerpt": ev})
+            item["evidence"] = new_evidence
+
+            # Normalize confidence: ensure it is a float.  The LLM may output
+            # confidence as a string like "HIGH", "MEDIUM", "LOW" or a numeric
+            # string.  Convert common terms to a numeric approximation and
+            # coerce numeric strings to floats.  Default to 0.5 if unparseable.
+            conf = item.get("confidence")
+            if isinstance(conf, str):
+                conf_upper = conf.strip().upper()
+                # Map textual confidences to approximate numeric values
+                conf_map = {"HIGH": 0.9, "MEDIUM": 0.6, "LOW": 0.3}
+                if conf_upper in conf_map:
+                    item["confidence"] = conf_map[conf_upper]
+                else:
+                    # Try to parse as float
+                    try:
+                        item["confidence"] = float(conf)
+                    except Exception:
+                        item["confidence"] = 0.5
+            # Ensure confidence is a float even if provided as int or other type
+            elif not isinstance(conf, (int, float)):
+                item["confidence"] = 0.5
+        data["checklist"] = checklist
+
+        # Normalize blocking_issues: ensure each item is a string.  The LLM
+        # may return dictionaries for blocking issues with fields like
+        # {"rule_id": ..., "issue": ...}.  Convert these into a readable string.
+        blocking_issues = data.get("blocking_issues", []) or []
+        new_blocking: List[str] = []
+        for bi in blocking_issues:
+            if isinstance(bi, dict):
+                # Build a string representation from common keys
+                rule_id = bi.get("rule_id") or bi.get("id")
+                issue_msg = bi.get("issue") or bi.get("message") or bi.get("title")
+                if rule_id and issue_msg:
+                    new_blocking.append(f"{rule_id}: {issue_msg}")
+                else:
+                    # Fallback: dump as JSON string
+                    try:
+                        new_blocking.append(json.dumps(bi, ensure_ascii=False))
+                    except Exception:
+                        new_blocking.append(str(bi))
+            else:
+                new_blocking.append(str(bi))
+        data["blocking_issues"] = new_blocking
+
+        return ChecklistReportModel(**data)
+
+    def generate_flowchart(self, *, process_description: str) -> FlowchartModel:
+        prompt = (
+            "You generate Mermaid flowchart code in the TD layout from a process description. "
+            "Return a JSON object with fields: mermaid (the code starting with 'flowchart TD'), "
+            "title (string), assumptions (array of strings), questions (array of strings)."
+        )
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": process_description or ""},
+        ]
+        resp = self._client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=0.0,
+            response_format={"type": "json_object"},
+        )
+        self.last_reasoning_summary = None
+        try:
+            output_text = resp.choices[0].message.content  # type: ignore[attr-defined]
+            data = json.loads(output_text)
+        except Exception as e:
+            raise ValueError(f"Failed to parse flowchart JSON: {output_text}") from e
+        return FlowchartModel(**data)

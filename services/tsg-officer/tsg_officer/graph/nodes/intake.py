@@ -73,6 +73,17 @@ def _try_parse_fields(text: str) -> Dict[str, Any]:
         v = re.search(r"(yes|no|maybe)", text, re.I).group(1).lower()  # type: ignore[union-attr]
         found["needs_flowchart"] = v
 
+    # Allow shorthand application type mention without a prefix.  If the text
+    # includes a known application type (e.g. "building_permit" or "tsg_general"),
+    # treat it as an explicit application_type override.  This helps users who
+    # reply with "It's for building_permit." without the "application type:" prefix.
+    APPLICATION_TYPES = ["building_permit", "tsg_general"]
+    for app in APPLICATION_TYPES:
+        # look for the exact token (case‑insensitive) surrounded by word boundaries
+        if re.search(r"\b" + re.escape(app) + r"\b", text, re.I):
+            found["application_type"] = app
+            break
+
     return found
 
 
@@ -104,11 +115,17 @@ def make_intake_node(llm: LLMClient):
 
         # Application type classification (only if missing)
         application_type = state.get("application_type") or intake_data.get("application_type")
+        classification_reason = None
         if not application_type and last_user.strip():
             guess = llm.classify_application_type(last_user)
             # We accept the guess and keep moving; user can override later.
             application_type = guess.application_type
             intake_data["application_type"] = application_type
+            # Capture the rationale if present on the guess (pydantic model)
+            try:
+                classification_reason = getattr(guess, "rationale", None)
+            except Exception:
+                classification_reason = None
 
         # Determine required + missing fields
         required_fields = state.get("required_fields") or []
@@ -122,12 +139,22 @@ def make_intake_node(llm: LLMClient):
         missing_fields = [f for f in required_fields if f not in intake_data or intake_data.get(f) in (None, "")]
         next_phase = "INTAKE" if missing_fields else "CHECKLIST"
         # Persist computed fields
+        # Base updates that always get applied before returning.  Include the
+        # LLM classification reasoning (if available) to aid debugging.  When
+        # using the OpenAIResponsesLLMClient or a model with a rationale field this
+        # will contain a natural language explanation of why the application type
+        # was chosen.
         update_base = {
             "application_type": application_type,
             "intake": intake_data,
             "required_fields": required_fields,
             "missing_fields": missing_fields,
             "phase": next_phase,
+            # Use the classification_reason captured above if available; otherwise fall
+            # back to the last_reasoning_summary attribute on the llm (for older
+            # implementations that captured reasoning summaries).  This ensures
+            # that at least some rationale is stored when provided by the LLM.
+            "classification_reasoning": classification_reason or getattr(llm, "last_reasoning_summary", None),
         }
 
         if missing_fields:
