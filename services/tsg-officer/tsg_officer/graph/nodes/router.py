@@ -26,7 +26,7 @@ def route(state: TSGState) -> Command[
                     {
                         "role": "assistant",
                         "content": (
-                            "Hi — I'm TSG Officer. I'll help you complete intake and produce an auditable checklist.\n\n"
+                            "Hi — I'm TSG Virtual AI Officer. I'll help you complete TSG intake for AI and produce an auditable checklist.\n\n"
                         ),
                     }
                 ],

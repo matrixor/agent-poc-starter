@@ -12,7 +12,7 @@ from tsg_officer.tools.llm import LLMClient
 
 _FIELD_HELP: Dict[str, Dict[str, str]] = {
     "application_type": {
-        "q": "What type of submission is this? (e.g., Consumer of Internal AI, Internal AI Builder)",
+        "q": "What type of submission is this? (e.g., Consumer of Internal AI, Consumer of External AI, Internal AI Builder)",
         "hint": "If you're unsure, describe the request and I'll classify it.",
     },
     "project_address": {
