@@ -127,6 +127,7 @@ def make_checklist_node(llm: LLMClient, rules_repo: RuleRepository):
                         "fail": fail_n,
                         "unknown": unknown_n,
                         "rules_count": len(rules),
+                        "rules_path": str(getattr(rules_repo, "path", "")),
                     },
                 )
             ],

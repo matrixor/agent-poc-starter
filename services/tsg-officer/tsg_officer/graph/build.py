@@ -39,7 +39,15 @@ def build_dependencies(settings: Settings) -> Tuple[LLMClient, YamlRuleRepositor
         llm = MockLLMClient()
 
     # Rules repository
-    rules_path = Path(__file__).resolve().parent.parent.parent / "data" / "rules" / "sample_rules.yaml"
+    default_rules_path = Path(__file__).resolve().parent.parent.parent / "data" / "rules" / "rules.v1.yaml"
+
+    if getattr(settings, "rules_path", ""):
+        override = Path(str(settings.rules_path)).expanduser()
+        # If a relative path is provided, resolve it relative to the package root
+        # (which is /app in the docker-compose setup).
+        rules_path = override if override.is_absolute() else (default_rules_path.parent.parent.parent / override)
+    else:
+        rules_path = default_rules_path
     rules_repo = YamlRuleRepository(rules_path)
 
     return llm, rules_repo

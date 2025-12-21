@@ -12,7 +12,7 @@ from tsg_officer.tools.llm import LLMClient
 
 _FIELD_HELP: Dict[str, Dict[str, str]] = {
     "application_type": {
-        "q": "What type of submission is this? (e.g., building_permit, tsg_general)",
+        "q": "What type of submission is this? (e.g., Consumer of Internal AI, Internal AI Builder)",
         "hint": "If you're unsure, describe the request and I'll classify it.",
     },
     "project_address": {
@@ -42,6 +42,52 @@ _FIELD_HELP: Dict[str, Dict[str, str]] = {
 }
 
 
+# Canonical application types supported by this app. Keep these aligned with the
+# rule library's `applies_to` values.
+_APPLICATION_TYPES: List[str] = [
+    "Consumer of Internal AI",
+    "Consumer of External AI",
+    "Internal AI Builder",
+
+    # Legacy/demo types (still supported by the mock/demo rule library)
+    "building_permit",
+    "tsg_general",
+]
+
+
+def _normalize_application_type(value: str) -> str:
+    """Normalize application type input for matching.
+
+    Accepts common variants like:
+    - "internal_ai_builder"
+    - "Internal-AI-Builder"
+    - "consumer of internal ai"
+    """
+    v = (value or "").strip().strip('"').strip("'")
+    v = re.sub(r"\s+", " ", v)
+    # unify separators
+    v = v.replace("_", " ").replace("-", " ")
+    v = re.sub(r"\s+", " ", v)
+    return v.casefold()
+
+
+def _canonical_application_type(value: str) -> str | None:
+    norm = _normalize_application_type(value)
+    if not norm:
+        return None
+    for canonical in _APPLICATION_TYPES:
+        if _normalize_application_type(canonical) == norm:
+            return canonical
+    return None
+
+
+def _application_type_pattern(canonical: str) -> str:
+    """Regex that matches a canonical type allowing spaces/underscores/hyphens."""
+    # Example: "Consumer of Internal AI" -> r"consumer[ _-]+of[ _-]+internal[ _-]+ai"
+    tokens = [re.escape(t) for t in canonical.split()]
+    return r"\b" + r"[\s_-]+".join(tokens) + r"\b"
+
+
 def _last_user_text(state: TSGState) -> str:
     msgs = state.get("messages", []) or []
     for m in reversed(msgs):
@@ -56,9 +102,16 @@ def _try_parse_fields(text: str) -> Dict[str, Any]:
     if not text:
         return found
 
-    m = re.search(r"application[_\s-]*type\s*[:=]\s*([A-Za-z0-9_\-]+)", text, re.I)
+    # Allow application type values with spaces, underscores, or hyphens.
+    # Examples:
+    # - application type: Consumer of Internal AI
+    # - application_type=internal_ai_builder
+    m = re.search(r"application[_\s-]*type\s*[:=]\s*(.+)", text, re.I)
     if m:
-        found["application_type"] = m.group(1).strip()
+        raw = (m.group(1) or "").strip()
+        # take only the first line if user pasted a paragraph
+        raw = raw.splitlines()[0].strip().rstrip(".,;")
+        found["application_type"] = _canonical_application_type(raw) or raw
 
     m = re.search(r"\bAPN\b\s*[:=]?\s*([0-9\-]+)", text, re.I)
     if m:
@@ -77,12 +130,15 @@ def _try_parse_fields(text: str) -> Dict[str, Any]:
     # includes a known application type (e.g. "building_permit" or "tsg_general"),
     # treat it as an explicit application_type override.  This helps users who
     # reply with "It's for building_permit." without the "application type:" prefix.
-    APPLICATION_TYPES = ["building_permit", "tsg_general"]
-    for app in APPLICATION_TYPES:
-        # look for the exact token (case‑insensitive) surrounded by word boundaries
-        if re.search(r"\b" + re.escape(app) + r"\b", text, re.I):
-            found["application_type"] = app
+    for canonical in _APPLICATION_TYPES:
+        # Match allowing flexible separators/casing.
+        if re.search(_application_type_pattern(canonical), text, re.I):
+            found["application_type"] = canonical
             break
+
+    # If we captured an application_type but it's not canonical, try to canonicalize.
+    if "application_type" in found:
+        found["application_type"] = _canonical_application_type(str(found["application_type"])) or found["application_type"]
 
     return found
 

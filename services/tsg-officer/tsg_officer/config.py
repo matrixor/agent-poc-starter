@@ -21,6 +21,9 @@ class Settings:
     llm_provider: LLMProvider = "mock"
     openai_model: str = "gpt-4o-mini"
     checkpoint_db: str = "./.tsg_checkpoints.sqlite"
+    # Optional override for the rules YAML file.
+    # If unset, the app defaults to data/rules/rules.v1.yaml inside the package.
+    rules_path: str = ""
 
     @staticmethod
     def from_env() -> "Settings":
@@ -35,6 +38,8 @@ class Settings:
         if not checkpoint_db:
             checkpoint_db = "./.tsg_checkpoints.sqlite"
 
+        rules_path = os.getenv("TSG_RULES_PATH", "").strip()
+
         # Ensure parent dir exists
         Path(checkpoint_db).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
@@ -42,4 +47,5 @@ class Settings:
             llm_provider=llm_provider,  # type: ignore[arg-type]
             openai_model=openai_model,
             checkpoint_db=checkpoint_db,
+            rules_path=rules_path,
         )

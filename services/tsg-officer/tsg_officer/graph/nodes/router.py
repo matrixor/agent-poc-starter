@@ -27,7 +27,6 @@ def route(state: TSGState) -> Command[
                         "role": "assistant",
                         "content": (
                             "Hi — I'm TSG Officer. I'll help you complete intake and produce an auditable checklist.\n\n"
-                            "To start: what are you trying to submit / get approved (1–2 sentences)?"
                         ),
                     }
                 ],

@@ -1,6 +1,6 @@
-# TSG Officer (LangGraph + Streamlit Scaffold)
+# TSG AI Officer (LangGraph + Streamlit)
 
-This repo is a **project scaffold** for building a chat-first “virtual role” — a **TSG Officer** that guides an applicant through intake and produces a **consistent, auditable checklist report**.
+This repo is for building a chat-first “virtual role” — a **TSG AI Officer** that guides an applicant through intake and produces a **consistent, auditable checklist report**.
 
 It is intentionally **UI-first (Streamlit)** and **workflow-first (LangGraph)**:
 - Streamlit provides a **ChatGPT-like** interface using `st.chat_message` + `st.chat_input`.

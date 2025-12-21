@@ -20,6 +20,39 @@ from tsg_officer.state import new_case_state
 st.set_page_config(page_title="TSG Officer", page_icon="✅", layout="wide")
 
 
+def _get_query_params() -> Dict[str, Any]:
+    """Compatibility wrapper across Streamlit versions."""
+    # Newer Streamlit exposes st.query_params (Mapping[str, str|list[str]])
+    qp = getattr(st, "query_params", None)
+    if qp is not None:
+        # Convert to plain dict to keep downstream logic simple
+        return dict(qp)
+    # Older Streamlit uses experimental_get_query_params (dict[str, list[str]])
+    getter = getattr(st, "experimental_get_query_params", None)
+    if getter is not None:
+        return getter()  # type: ignore[no-any-return]
+    return {}
+
+
+def _query_flag(name: str, default: bool = False) -> bool:
+    """Return True when URL query param is set (e.g. ?debug=1)."""
+    params = _get_query_params()
+    raw = params.get(name)
+    if raw is None:
+        return default
+    # Streamlit may return a str, or a list[str]
+    value = raw[0] if isinstance(raw, list) and raw else raw
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in ("1", "true", "t", "yes", "y", "on"):
+        return True
+    if text in ("0", "false", "f", "no", "n", "off"):
+        return False
+    # Unknown value: treat as enabled if present (common pattern: ?debug)
+    return True
+
+
 @st.cache_resource
 def get_graph():
     settings = Settings.from_env()
@@ -131,39 +164,41 @@ def sidebar(graph):
             st.rerun()
 
     st.sidebar.divider()
-    with st.sidebar.expander("Debug / Audit"):
-        config = {"configurable": {"thread_id": st.session_state.thread_id}}
-        try:
-            snap = graph.get_state(config)
-            st.write("**Phase**:", snap.values.get("phase"))
-            st.write("**Missing fields**:", snap.values.get("missing_fields"))
-            st.write("**Reviewer decision**:", snap.values.get("reviewer_decision"))
-            if snap.values.get("checklist_report"):
-                st.write("**Checklist report**")
-                st.json(snap.values.get("checklist_report"))
+    # Hidden by default; enable with URL param like ?debug=1
+    if _query_flag("debug", default=False):
+        with st.sidebar.expander("Debug / Audit"):
+            config = {"configurable": {"thread_id": st.session_state.thread_id}}
+            try:
+                snap = graph.get_state(config)
+                st.write("**Phase**:", snap.values.get("phase"))
+                st.write("**Missing fields**:", snap.values.get("missing_fields"))
+                st.write("**Reviewer decision**:", snap.values.get("reviewer_decision"))
+                if snap.values.get("checklist_report"):
+                    st.write("**Checklist report**")
+                    st.json(snap.values.get("checklist_report"))
 
-            # Audit log
-            st.write("**Audit log**")
-            st.json(snap.values.get("audit_log", []))
+                # Audit log
+                st.write("**Audit log**")
+                st.json(snap.values.get("audit_log", []))
 
-            # Display any captured reasoning summaries (classification/checklist/flowchart)
-            reasoning_items = []
-            class_reason = snap.values.get("classification_reasoning")
-            if class_reason:
-                reasoning_items.append(("Classification reasoning", class_reason))
-            checklist_reason = snap.values.get("checklist_reasoning")
-            if checklist_reason:
-                reasoning_items.append(("Checklist reasoning", checklist_reason))
-            flow_reason = snap.values.get("flowchart_reasoning")
-            if flow_reason:
-                reasoning_items.append(("Flowchart reasoning", flow_reason))
-            if reasoning_items:
-                st.write("**LLM reasoning summaries**")
-                for title, text in reasoning_items:
-                    with st.expander(title, expanded=False):
-                        st.markdown(text)
-        except Exception as e:
-            st.warning(f"No state yet for this thread: {e}")
+                # Display any captured reasoning summaries (classification/checklist/flowchart)
+                reasoning_items = []
+                class_reason = snap.values.get("classification_reasoning")
+                if class_reason:
+                    reasoning_items.append(("Classification reasoning", class_reason))
+                checklist_reason = snap.values.get("checklist_reasoning")
+                if checklist_reason:
+                    reasoning_items.append(("Checklist reasoning", checklist_reason))
+                flow_reason = snap.values.get("flowchart_reasoning")
+                if flow_reason:
+                    reasoning_items.append(("Flowchart reasoning", flow_reason))
+                if reasoning_items:
+                    st.write("**LLM reasoning summaries**")
+                    for title, text in reasoning_items:
+                        with st.expander(title, expanded=False):
+                            st.markdown(text)
+            except Exception as e:
+                st.warning(f"No state yet for this thread: {e}")
 
     st.sidebar.divider()
     st.sidebar.caption("Tip: run with mock LLM by default. Set env TSG_LLM_PROVIDER=openai for real LLM.")
@@ -219,12 +254,9 @@ def main():
 
     # Init case (once)
     if not st.session_state.initialized:
-        res = bootstrap_case(graph)
-        # The graph writes assistant greeting into state messages; easiest is to just show it here too.
-        # We'll also store it in local UI chat for ChatGPT-like display.
-        msgs = res.get("messages", [])
-        for msg in msgs:
-            append_message(msg["role"], msg["content"])
+        # bootstrap_case() already appends the initial graph messages + first interrupt question
+        # into the local UI chat history.
+        bootstrap_case(graph)
         st.session_state.initialized = True
 
     render_chat()
