@@ -19,6 +19,11 @@ def make_checklist_node(llm: LLMClient, rules_repo: RuleRepository):
         application_type = state.get("application_type") or state.get("intake", {}).get("application_type") or "tsg_general"
 
         rules = [r.to_dict() for r in rules_repo.list_rules(application_type)]
+        rule_by_id: Dict[str, Dict[str, Any]] = {}
+        for r in rules:
+            rid = str(r.get("rule_id") or "").strip()
+            if rid:
+                rule_by_id[rid] = r
 
         intake = state.get("intake", {}) or {}
         # Base submission text either comes from the intake record or from uploaded documents
@@ -70,8 +75,16 @@ def make_checklist_node(llm: LLMClient, rules_repo: RuleRepository):
         # Build a compact summary message
         overall = report.get("overall_recommendation", "NEED_INFO")
         checklist_items = report.get("checklist", []) or []
-        unknown_n = sum(1 for i in checklist_items if i.get("status") == "UNKNOWN")
-        fail_n = sum(1 for i in checklist_items if i.get("status") == "FAIL")
+        unknown_n = sum(
+            1
+            for i in checklist_items
+            if str(i.get("status") or "").upper() == "UNKNOWN"
+        )
+        fail_n = sum(
+            1
+            for i in checklist_items
+            if str(i.get("status") or "").upper() == "FAIL"
+        )
 
         summary_lines = [
             f"Checklist complete. Recommendation: **{overall}**",
@@ -80,6 +93,45 @@ def make_checklist_node(llm: LLMClient, rules_repo: RuleRepository):
         ]
 
         followups = report.get("followup_questions", []) or []
+
+        # Some LLM backends omit followup_questions even when checklist items are UNKNOWN.
+        # If that happens, synthesize follow-ups from UNKNOWN BLOCKER/WARN items so we
+        # don't jump directly to the reviewer decision step.
+        if (not isinstance(followups, list) or not followups) and checklist_items:
+            synthesized: List[str] = []
+            for item in checklist_items:
+                if not isinstance(item, dict):
+                    continue
+
+                status = str(item.get("status") or "").upper()
+                severity = str(item.get("severity") or "").upper()
+                if status != "UNKNOWN":
+                    continue
+                if severity not in ("BLOCKER", "WARN"):
+                    continue
+
+                rid = str(item.get("rule_id") or "").strip()
+                meta = rule_by_id.get(rid, {})
+                q = str(meta.get("question") or "").strip()
+                if not q:
+                    title = str(item.get("title") or rid or "this requirement").strip()
+                    missing = item.get("missing") or []
+                    missing_hint = ""
+                    if isinstance(missing, list) and missing:
+                        missing_hint = str(missing[0]).strip()
+                    if missing_hint:
+                        q = f"{title}: {missing_hint}"
+                    else:
+                        q = f"Please provide the information/evidence needed for: {title}"
+
+                if q and q not in synthesized:
+                    synthesized.append(q)
+                if len(synthesized) >= 8:
+                    break
+
+            if synthesized:
+                report["followup_questions"] = synthesized
+                followups = synthesized
         needs_flowchart = (str(intake.get("needs_flowchart") or "")).lower() in ("yes", "y", "true")
         has_flowchart = bool(state.get("flowchart_mermaid")) and bool(state.get("flowchart_confirmed"))
 

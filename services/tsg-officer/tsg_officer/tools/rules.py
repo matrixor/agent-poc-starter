@@ -15,6 +15,7 @@ class Rule:
     severity: str = "INFO"           # BLOCKER | WARN | INFO
     applies_to: Optional[List[str]] = None
     keywords: Optional[List[str]] = None
+    question: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -24,6 +25,7 @@ class Rule:
             "severity": self.severity,
             "applies_to": self.applies_to or [],
             "keywords": self.keywords or [],
+            "question": self.question or "",
         }
 
 
@@ -54,6 +56,7 @@ class YamlRuleRepository:
                     severity=r.get("severity", "INFO"),
                     applies_to=applies,
                     keywords=r.get("keywords") or [],
+                    question=r.get("question") or None,
                 )
             )
         return rules
