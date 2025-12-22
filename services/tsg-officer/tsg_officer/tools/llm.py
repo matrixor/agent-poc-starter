@@ -223,7 +223,7 @@ class OpenAIChatLLMClient:
         model = self._model(temperature=0.2).with_structured_output(FlowchartModel)  # type: ignore[attr-defined]
         prompt = (
             "Generate Mermaid flowchart TD code from the described process.\n"
-            "Return structured flowchart object with mermaid, assumptions, questions."\
+            "Return structured flowchart object with mermaid, assumptions, questions."
         )
         messages = [
             {"role": "system", "content": "Return ONLY structured output."},
