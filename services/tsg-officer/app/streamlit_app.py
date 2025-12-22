@@ -364,10 +364,6 @@ def sidebar(graph):
             except Exception as e:
                 st.warning(f"No state yet for this thread: {e}")
 
-    st.sidebar.divider()
-    st.sidebar.caption("Tip: run with mock LLM by default. Set env TSG_LLM_PROVIDER=openai for real LLM.")
-
-
 def render_chat():
     for m in st.session_state.chat:
         _render_chat_message(m["role"], m["content"])
