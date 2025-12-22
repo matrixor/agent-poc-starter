@@ -20,7 +20,7 @@ from tsg_officer.graph import build_graph
 from tsg_officer.state import new_case_state
 
 
-st.set_page_config(page_title="TechGov AI", page_icon="✅", layout="wide")
+st.set_page_config(page_title="TSG - AI", page_icon="✅", layout="wide")
 
 
 def _inject_techgov_styles() -> None:
@@ -39,7 +39,7 @@ def _render_topbar() -> None:
             '  <div class="tg-brand">'
             '    <div class="tg-logo"></div>'
             '    <div class="tg-title">'
-            '      <h1>TechGov AI</h1>'
+            '      <h1>TSG - AI</h1>'
             '      <p>AI Governance &amp; Compliance Audit Platform</p>'
             '    </div>'
             '  </div>'
@@ -211,7 +211,7 @@ def ensure_session():
 
 
 def sidebar(graph):
-    st.sidebar.markdown("## TechGov AI")
+    st.sidebar.markdown("## TSG - AI")
     st.sidebar.caption("AI Governance & Compliance Audit Platform")
 
     if st.sidebar.button("New TSG for AI Session"):

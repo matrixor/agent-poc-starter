@@ -453,6 +453,53 @@ class OpenAIResponsesLLMClient:
                 new_blocking.append(str(bi))
         data["blocking_issues"] = new_blocking
 
+        # Normalize followup_questions: ensure each item is a string.
+        # The LLM may return objects like {"rule_id": ..., "question": ..., "justification": ...}.
+        followups_raw = data.get("followup_questions", [])
+        new_followups: List[str] = []
+        if isinstance(followups_raw, list):
+            for fq in followups_raw:
+                if isinstance(fq, dict):
+                    rule_id = fq.get("rule_id") or fq.get("id")
+                    question = fq.get("question") or fq.get("q") or fq.get("text")
+                    justification = fq.get("justification") or fq.get("rationale") or fq.get("reason")
+
+                    rule_id_s = str(rule_id).strip() if rule_id is not None else ""
+                    q_s = str(question).strip() if question is not None else ""
+
+                    if rule_id_s and q_s:
+                        s = f"{rule_id_s}: {q_s}"
+                    elif q_s:
+                        s = q_s
+                    else:
+                        try:
+                            s = json.dumps(fq, ensure_ascii=False)
+                        except Exception:
+                            s = str(fq)
+
+                    j_s = str(justification).strip() if justification is not None else ""
+                    if j_s:
+                        s = f"{s} — {j_s}"
+
+                    new_followups.append(s)
+                else:
+                    new_followups.append(str(fq))
+        elif followups_raw is None:
+            new_followups = []
+        else:
+            new_followups = [str(followups_raw)]
+
+        # Drop empties + de-duplicate while preserving order.
+        seen: set[str] = set()
+        followups_out: List[str] = []
+        for s in new_followups:
+            s2 = (s or "").strip()
+            if not s2 or s2 in seen:
+                continue
+            seen.add(s2)
+            followups_out.append(s2)
+        data["followup_questions"] = followups_out
+
         return ChecklistReportModel(**data)
 
     def generate_flowchart(self, *, process_description: str) -> FlowchartModel:

@@ -308,7 +308,7 @@ section[data-testid="stSidebar"],
 }
 
 .tg-msg-body-user {
-  text-align: right;
+  text-align: left;
 }
 
 .tg-msg-role {
@@ -343,6 +343,7 @@ section[data-testid="stSidebar"],
   background: #FFFFFF;
   border-right: 4px solid #10B981;
   border-radius: 18px 0 18px 18px;
+  text-align: left;
 }
 
 /* Tighten typography inside bubbles */
