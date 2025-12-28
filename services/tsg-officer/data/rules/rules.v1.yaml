@@ -1,5 +1,5 @@
 rules:
-  - rule_id: RULE-CATEGORY
+  - rule_id: PRINCIPLE-CATEGORY
     title: Submission category identified
     description: Applicants must identify which Chubb AI application scenario applies so reviewers know the required controls.
     severity: BLOCKER
@@ -21,7 +21,7 @@ rules:
         mandatory: false
         description: "Answer contains a short justification referencing the scenario definition."
 
-  - rule_id: RULE-GOV-ALIGN
+  - rule_id: PRINCIPLE-GOV-ALIGN
     title: Alignment to enterprise AI principles
     description: Submissions must map to the Enterprise AI Architecture objectives.
     severity: WARN
@@ -36,7 +36,7 @@ rules:
       - "Reference to performance, cost, or responsibility considerations"
     references:
       - "framework.docx §§1,3,4"
-    depends_on: [RULE-SCOPE]
+    depends_on: [PRINCIPLE-SCOPE]
     checks:
       - id: covers_reliability
         mandatory: true
@@ -48,7 +48,7 @@ rules:
         mandatory: false
         description: "Answer touches on cost management or responsible AI practices."
 
-  - rule_id: RULE-RESP-AI
+  - rule_id: PRINCIPLE-RESP-AI
     title: Responsible AI controls documented
     description: High-impact workloads must describe responsible AI controls and governance.
     severity: BLOCKER
@@ -63,7 +63,7 @@ rules:
       - "Escalation or override process"
     references:
       - "framework.docx governance guidance"
-    depends_on: [RULE-GOV-ALIGN]
+    depends_on: [PRINCIPLE-GOV-ALIGN]
     checks:
       - id: bias_evaluation
         mandatory: true
@@ -75,7 +75,7 @@ rules:
         mandatory: true
         description: "Answer identifies escalation/override path."
 
-  - rule_id: RULE-EVIDENCE
+  - rule_id: PRINCIPLE-EVIDENCE
     title: Evidence-at-review artifacts planned
     description: Applicants must state which artifacts they will supply for review.
     severity: WARN
@@ -89,7 +89,7 @@ rules:
       - "Location or owner for each artifact"
     references:
       - "framework.docx Evidence checklist"
-    depends_on: [RULE-RESP-AI]
+    depends_on: [PRINCIPLE-RESP-AI]
     checks:
       - id: artifact_inventory
         mandatory: true
@@ -98,7 +98,7 @@ rules:
         mandatory: false
         description: "Answer notes where artifacts reside or who owns them."
 
-  - rule_id: RULE-AUTO-CICD
+  - rule_id: PRINCIPLE-AUTO-CICD
     title: Automation and CI/CD described
     description: Builders must describe automation across data prep, training, deployment, and monitoring pipelines.
     severity: WARN
@@ -112,7 +112,7 @@ rules:
       - "Statement confirming use of approved platforms"
     references:
       - "framework.docx §4.1"
-    depends_on: [RULE-EVIDENCE]
+    depends_on: [PRINCIPLE-EVIDENCE]
     checks:
       - id: automation_pipeline
         mandatory: true
@@ -121,7 +121,7 @@ rules:
         mandatory: true
         description: "Answer references approved tools/platforms (e.g., AI Studio, Vertex)."
 
-  - rule_id: RULE-RUNBOOKS
+  - rule_id: PRINCIPLE-RUNBOOKS
     title: Runbooks and collaboration documented
     description: Teams must maintain runbooks and collaboration approaches across regions.
     severity: INFO
@@ -135,7 +135,7 @@ rules:
       - "Description of how teams collaborate on updates"
     references:
       - "framework.docx §4.1"
-    depends_on: [RULE-AUTO-CICD]
+    depends_on: [PRINCIPLE-AUTO-CICD]
     checks:
       - id: runbook_location
         mandatory: true
@@ -144,7 +144,7 @@ rules:
         mandatory: false
         description: "Answer explains how teams coordinate updates."
 
-  - rule_id: RULE-MONITOR
+  - rule_id: PRINCIPLE-MONITOR
     title: Monitoring and feedback loop in place
     description: Monitoring for drift, performance, and agent behavior must be described.
     severity: WARN
@@ -158,7 +158,7 @@ rules:
       - "Alert thresholds or response procedures"
     references:
       - "framework.docx §4.1"
-    depends_on: [RULE-AUTO-CICD]
+    depends_on: [PRINCIPLE-AUTO-CICD]
     checks:
       - id: monitoring_metrics
         mandatory: true
@@ -170,7 +170,7 @@ rules:
         mandatory: false
         description: "Answer notes how monitoring feeds improvements."
 
-  - rule_id: RULE-SECRETS
+  - rule_id: PRINCIPLE-SECRETS
     title: Secrets management defined
     description: Secrets must be stored securely with rotation controls.
     severity: BLOCKER
@@ -184,7 +184,7 @@ rules:
       - "Statement on access controls and rotation practices"
     references:
       - "framework.docx §4.2"
-    depends_on: [RULE-RESP-AI]
+    depends_on: [PRINCIPLE-RESP-AI]
     checks:
       - id: uses_approved_secret_store
         mandatory: true
@@ -196,7 +196,7 @@ rules:
         mandatory: false
         description: "Answer mentions rotation cadence or lifecycle management."
 
-  - rule_id: RULE-SAFETY
+  - rule_id: PRINCIPLE-SAFETY
     title: Safety filters implemented
     description: Describe PII filtering, jailbreak detection, and harmful content safeguards.
     severity: WARN
@@ -211,7 +211,7 @@ rules:
       - "Content moderation or harmful output controls"
     references:
       - "framework.docx §4.2"
-    depends_on: [RULE-SECRETS]
+    depends_on: [PRINCIPLE-SECRETS]
     checks:
       - id: pii_filtering
         mandatory: true
@@ -223,7 +223,7 @@ rules:
         mandatory: false
         description: "Answer references harmful content review or moderation."
 
-  - rule_id: RULE-VENDOR
+  - rule_id: PRINCIPLE-VENDOR
     title: Vendor risk addressed
     description: External AI service usage must reference vendor risk and data residency assurances.
     severity: WARN
@@ -237,8 +237,7 @@ rules:
       - "Data residency or data handling assurances"
     references:
       - "framework.docx §4.2 vendor guidance"
-    depends_on: [RULE-SECRETS]
-    applicability: ConsumerOfExternalOnly
+    depends_on: [PRINCIPLE-SECRETS]
     checks:
       - id: risk_assessment_status
         mandatory: true
@@ -250,7 +249,7 @@ rules:
         mandatory: false
         description: "Answer mentions contractual or technical safeguards with vendor."
 
-  - rule_id: RULE-RESILIENCE
+  - rule_id: PRINCIPLE-RESILIENCE
     title: Resilience strategy defined
     description: Systems must document retries, backoff, circuit breakers, and fallbacks for downstream AI services.
     severity: WARN
@@ -265,7 +264,7 @@ rules:
       - "Fallback handling for degraded service"
     references:
       - "framework.docx §4.3"
-    depends_on: [RULE-MONITOR]
+    depends_on: [PRINCIPLE-MONITOR]
     checks:
       - id: retry_strategy
         mandatory: true
@@ -277,7 +276,7 @@ rules:
         mandatory: false
         description: "Answer mentions fallback flow or graceful degradation."
 
-  - rule_id: RULE-VERSIONS
+  - rule_id: PRINCIPLE-VERSIONS
     title: Versioning and rollback managed
     description: Teams must explain model/prompt version tracking, evaluation gates, and rollback procedures.
     severity: WARN
@@ -292,7 +291,7 @@ rules:
       - "Rollback or fallback procedure"
     references:
       - "framework.docx §4.3"
-    depends_on: [RULE-RESILIENCE]
+    depends_on: [PRINCIPLE-RESILIENCE]
     checks:
       - id: version_tracking
         mandatory: true
@@ -304,7 +303,7 @@ rules:
         mandatory: true
         description: "Answer outlines rollback or revert plan."
 
-  - rule_id: RULE-PERF
+  - rule_id: PRINCIPLE-PERF
     title: Performance targets validated
     description: Load and latency targets must be stated with validation methods.
     severity: INFO
@@ -318,7 +317,7 @@ rules:
       - "Description of validation method (canary, synthetic tests, etc.)"
     references:
       - "framework.docx §§4.4-4.5"
-    depends_on: [RULE-VERSIONS]
+    depends_on: [PRINCIPLE-VERSIONS]
     checks:
       - id: target_defined
         mandatory: true
@@ -330,7 +329,7 @@ rules:
         mandatory: false
         description: "Answer references monitoring or dashboards tracking performance."
 
-  - rule_id: RULE-COST
+  - rule_id: PRINCIPLE-COST
     title: Cost governance in place
     description: Applicants must outline cost tracking mechanisms and optimization levers.
     severity: INFO
@@ -344,7 +343,7 @@ rules:
       - "Optimization levers (tiering, caching, etc.)"
     references:
       - "framework.docx §§4.4-4.5"
-    depends_on: [RULE-PERF]
+    depends_on: [PRINCIPLE-PERF]
     checks:
       - id: cost_tracking
         mandatory: true
@@ -356,7 +355,7 @@ rules:
         mandatory: false
         description: "Answer mentions alerting or thresholds for cost anomalies."
 
-  - rule_id: RULE-RETRIEVAL
+  - rule_id: PRINCIPLE-RETRIEVAL
     title: Retrieval strategy documented
     description: Knowledge retrieval processes must avoid anti-patterns and enforce metadata/permission controls.
     severity: WARN
@@ -370,7 +369,7 @@ rules:
       - "Description of permission handling or access filtering"
     references:
       - "framework.docx §5"
-    depends_on: [RULE-COST]
+    depends_on: [PRINCIPLE-COST]
     checks:
       - id: metadata_strategy
         mandatory: true
@@ -382,7 +381,7 @@ rules:
         mandatory: false
         description: "Answer mentions actions to avoid common retrieval anti-patterns."
 
-  - rule_id: RULE-GUARDRAILS
+  - rule_id: PRINCIPLE-GUARDRAILS
     title: Guardrails against anti-patterns defined
     description: Safeguards must prevent "God Mode" indexing, dumb chunking, and stale embeddings.
     severity: INFO
@@ -396,7 +395,7 @@ rules:
       - "Chunking/embedding maintenance strategy"
     references:
       - "framework.docx §6"
-    depends_on: [RULE-RETRIEVAL]
+    depends_on: [PRINCIPLE-RETRIEVAL]
     checks:
       - id: permission_guardrails
         mandatory: true
@@ -405,7 +404,7 @@ rules:
         mandatory: false
         description: "Answer describes embedding refresh or maintenance cadence."
 
-  - rule_id: RULE-DIAGRAM
+  - rule_id: PRINCIPLE-DIAGRAM
     title: Diagram artifact prepared
     description: Flow diagrams showing orchestration across LLMs, tools, and data stores must be drafted when required.
     severity: INFO
@@ -419,7 +418,7 @@ rules:
       - "Reference to storage location or attachment"
     references:
       - "framework.docx Evidence"
-    depends_on: [RULE-FLOW]
+    depends_on: [PRINCIPLE-FLOW]
     checks:
       - id: diagram_available
         mandatory: true
@@ -428,7 +427,7 @@ rules:
         mandatory: false
         description: "Answer notes where the diagram is stored or how it will be delivered."
 
-  - rule_id: RULE-WALKTHROUGH
+  - rule_id: PRINCIPLE-WALKTHROUGH
     title: Reviewer walkthrough prepared
     description: Applicants should define how they will present the diagram and key controls during approval.
     severity: INFO
@@ -442,7 +441,7 @@ rules:
       - "Highlight of critical controls or checkpoints to cover"
     references:
       - "framework.docx Evidence"
-    depends_on: [RULE-DIAGRAM]
+    depends_on: [PRINCIPLE-DIAGRAM]
     checks:
       - id: walkthrough_plan
         mandatory: true

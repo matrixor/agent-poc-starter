@@ -83,6 +83,8 @@ class TSGState(TypedDict, total=False):
 
     # intake
     application_type: Optional[str]
+    # Optional: some projects fit multiple Chubb AI categories.
+    application_categories: Optional[List[str]]
     intake: Dict[str, Any]
     required_fields: List[str]
     missing_fields: List[str]
@@ -121,6 +123,14 @@ class TSGState(TypedDict, total=False):
     checklist_reasoning: Optional[str]
     flowchart_reasoning: Optional[str]
 
+    # A UI-focused reasoning summary for the *most recent* user turn.
+    #
+    # This is designed for Streamlit: after the user answers an interrupt
+    # question (intake/follow-up/diagram/review), the graph can store a short,
+    # user-readable explanation here so the UI can render it under the input.
+    ui_reasoning_title: Optional[str]
+    ui_reasoning_summary: Optional[str]
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -151,4 +161,8 @@ def new_case_state(case_id: Optional[str] = None) -> TSGState:
         "classification_reasoning": None,
         "checklist_reasoning": None,
         "flowchart_reasoning": None,
+
+        # UI reasoning panel
+        "ui_reasoning_title": None,
+        "ui_reasoning_summary": None,
     }

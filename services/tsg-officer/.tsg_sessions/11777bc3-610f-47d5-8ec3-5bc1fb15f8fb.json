@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "thread_id": "11777bc3-610f-47d5-8ec3-5bc1fb15f8fb",
+  "saved_at": "2025-12-28T19:06:07.701458+00:00",
+  "chat": [
+    {
+      "id": "4b76ef36-be33-4552-ab3d-49236ebe2b0b",
+      "role": "assistant",
+      "content": "Hi — I'm TSG Virtual AI Officer. I'll help you complete TSG intake for AI and produce an auditable checklist.\n\n"
+    },
+    {
+      "id": "1085888e-4f2b-46c4-b157-b930a76e038c",
+      "role": "assistant",
+      "content": "Please paste the main submission text (or a short excerpt).\n\n*You can paste directly into chat. For large docs, use the sidebar upload.*"
+    }
+  ],
+  "awaiting_resume": true,
+  "graph_messages_len": 1,
+  "initialized": true,
+  "last_interrupt_payload": {
+    "type": "intake_question",
+    "field": "submission_text",
+    "question": "Please paste the main submission text (or a short excerpt).",
+    "hint": "You can paste directly into chat. For large docs, use the sidebar upload."
+  },
+  "ui_reasoning_title": null,
+  "ui_reasoning_summary": null,
+  "user_waiting_for_reviewer": false,
+  "phase": "INTAKE",
+  "reviewer_decision": null,
+  "overall_recommendation": null
+}

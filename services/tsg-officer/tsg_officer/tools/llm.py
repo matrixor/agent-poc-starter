@@ -33,6 +33,21 @@ class LLMClient(Protocol):
     def generate_flowchart(self, *, process_description: str) -> FlowchartModel:
         ...
 
+    def summarize_reasoning(
+        self,
+        *,
+        step: str,
+        question: str,
+        answer: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Return a short, user-readable reasoning summary for a workflow step.
+
+        This is intentionally a *summary* (not chain-of-thought). The UI can
+        surface it to explain what was captured and how it affects next steps.
+        """
+        ...
+
 
 @dataclass
 class MockLLMClient:
@@ -40,15 +55,81 @@ class MockLLMClient:
 
     def classify_application_type(self, user_text: str) -> ApplicationTypeModel:
         text = (user_text or "").lower()
+
+        # Legacy/demo: building permits
         if any(k in text for k in ["building", "permit", "plan check", "apn", "bsn"]):
-            app = "building_permit"
-            conf = 0.6
-            rationale = "Detected building/permit keywords."
-        else:
-            app = "tsg_general"
-            conf = 0.55
-            rationale = "No strong signal; defaulting to general TSG workflow."
-        return ApplicationTypeModel(application_type=app, confidence=conf, rationale=rationale)
+            return ApplicationTypeModel(
+                application_type="building_permit",
+                confidence=0.6,
+                rationale="Detected building/permit keywords.",
+            )
+
+        # Chubb AI categories (projects may match more than one)
+        cats = []
+
+        external_signals = [
+            "vendor",
+            "third-party",
+            "third party",
+            "external",
+            "hosted outside",
+            "outside chubb",
+            "openai",
+            "anthropic",
+            "claude",
+            "azure openai",
+            "gpt",
+            "api key",
+            "api keys",
+        ]
+        internal_signals = [
+            "internal model",
+            "chubb model",
+            "internal ai",
+            "enterprise model",
+            "internal llm",
+        ]
+        builder_signals = [
+            "build",
+            "builder",
+            "integration",
+            "gateway",
+            "apim",
+            "platform",
+            "workflow",
+            "extension",
+            "governed",
+            "policy",
+            "orchestr",
+            "backend",
+            "observability",
+        ]
+
+        if any(k in text for k in external_signals):
+            cats.append("Consumer of External AI")
+        if any(k in text for k in internal_signals):
+            cats.append("Consumer of Internal AI")
+        if any(k in text for k in builder_signals):
+            cats.append("Internal AI Builder")
+
+        # Dedupe while keeping order
+        dedup = []
+        for c in cats:
+            if c not in dedup:
+                dedup.append(c)
+        cats = dedup
+
+        if cats:
+            app = ", ".join(cats)
+            rationale = "Heuristic match from submission text indicators."
+            conf = 0.7 if len(cats) == 1 else 0.75
+            return ApplicationTypeModel(application_type=app, confidence=conf, rationale=rationale)
+
+        return ApplicationTypeModel(
+            application_type="tsg_general",
+            confidence=0.55,
+            rationale="No clear category signal; defaulting to general TSG workflow.",
+        )
 
     def generate_checklist_report(
         self,
@@ -152,6 +233,80 @@ class MockLLMClient:
             questions=questions,
         )
 
+    def summarize_reasoning(
+        self,
+        *,
+        step: str,
+        question: str,
+        answer: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Deterministic summary used for local/dev runs (no external APIs)."""
+
+        ctx = context or {}
+        field = str(ctx.get("field") or "").strip()
+        remaining = ctx.get("remaining_fields")
+        remaining_n = len(remaining) if isinstance(remaining, list) else None
+
+        # Hand-tuned explanations for common intake fields.
+        field_explain = {
+            "application_type": "Used to select the correct governance rules and checklist for this submission.",
+            "project_address": "Used for jurisdiction/context and to tie the case to the correct project record.",
+            "apn": "Used to uniquely identify the parcel and cross-check project records.",
+            "bsn": "Used to match the submission to an internal building/business record (if applicable).",
+            "scope_summary": "Used to understand what the AI system does and what compliance domains apply.",
+            "submission_text": "Used as the primary evidence for checklist evaluation and follow-up questions.",
+            "needs_flowchart": "Used to decide whether a process diagram is required before approval.",
+        }
+
+        lines: List[str] = []
+
+        if step == "intake" and field:
+            lines.append(f"- Recorded **{field}** from your answer.")
+            explain = field_explain.get(field) or "Used to complete intake and proceed to evaluation."
+            lines.append(f"- Why it matters: {explain}")
+            if remaining_n is not None:
+                if remaining_n > 0:
+                    lines.append(f"- Next: we still need {remaining_n} more intake item(s) before running the checklist.")
+                else:
+                    lines.append("- Next: intake is complete, so we'll run the checklist evaluation.")
+            return "\n".join(lines)
+
+        if step == "followup":
+            lines.append("- Captured your clarification for an item that was previously marked UNKNOWN.")
+            lines.append("- This answer will be appended to the submission evidence and the checklist will be re-run.")
+            return "\n".join(lines)
+
+        if step == "diagram_process":
+            lines.append("- Captured the process steps you described.")
+            lines.append("- Next: we'll generate a draft Mermaid flowchart and ask you to confirm it.")
+            return "\n".join(lines)
+
+        if step == "diagram_confirm":
+            confirmed = bool(ctx.get("confirmed"))
+            if confirmed:
+                lines.append("- Flowchart confirmed as accurate.")
+                lines.append("- Next: moving to the reviewer decision step.")
+            else:
+                lines.append("- Received corrections for the flowchart.")
+                lines.append("- Next: regenerating the diagram from your updated steps.")
+            return "\n".join(lines)
+
+        if step == "review_decision":
+            decision = str(ctx.get("decision") or "NEED_INFO").strip() or "NEED_INFO"
+            lines.append(f"- Reviewer decision recorded: **{decision}**.")
+            lines.append("- Next: the case will be finalized and a checklist/audit export will be available.")
+            return "\n".join(lines)
+
+        # Generic fallback
+        q = (question or "").strip()
+        a = (answer or "").strip()
+        if q:
+            lines.append("- Processed your response to the current question.")
+        if a:
+            lines.append("- Your answer has been recorded and will be used in the next workflow step.")
+        return "\n".join(lines) if lines else "Response recorded."
+
 
 class OpenAIChatLLMClient:
     """Example LLM backend using LangChain's ChatOpenAI.
@@ -183,7 +338,7 @@ class OpenAIChatLLMClient:
         messages = [
             {
                 "role": "system",
-                "content": "You classify TSG application type. Return only the structured object.",
+                "content": "You classify Chubb TSG-for-AI submissions into one or more categories. Allowed categories: Consumer of Internal AI, Consumer of External AI, Internal AI Builder, building_permit, tsg_general. If more than one applies, set application_type to a comma-separated list of categories (e.g., Consumer of External AI, Internal AI Builder). Use tsg_general only if none apply. Return only the structured object.",
             },
             {"role": "user", "content": user_text},
         ]
@@ -230,6 +385,37 @@ class OpenAIChatLLMClient:
             {"role": "user", "content": prompt + "\n\n" + process_description},
         ]
         return model.invoke(messages)  # type: ignore[return-value]
+
+    def summarize_reasoning(
+        self,
+        *,
+        step: str,
+        question: str,
+        answer: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Generate a short, user-readable reasoning summary (no chain-of-thought)."""
+
+        payload = {
+            "step": step,
+            "question": question,
+            "answer": answer,
+            "context": context or {},
+        }
+        system = (
+            "You are a compliance officer assistant embedded in an intake workflow. "
+            "Write a concise 'reasoning summary' that is safe to show to end users. "
+            "Do NOT reveal chain-of-thought or internal deliberations. "
+            "Use 2–4 bullet points, plain language, max ~80 words."
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        # Use a slightly higher temperature for readability.
+        resp = self._model(temperature=0.2).invoke(messages)
+        text = getattr(resp, "content", None) or str(resp)
+        return str(text).strip()
 
 
 # -----------------------------------------------------------------------------
@@ -308,10 +494,11 @@ class OpenAIResponsesLLMClient:
         # should reply with a JSON object containing application_type,
         # confidence (0.0-1.0), and rationale.
         instructions = (
-            "You are a classifier for TSG submissions. "
-            "Categorize the user_text into one of a small set of application types. "
-            "Return a JSON object with fields: application_type (string), confidence (float between 0 and 1), "
-            "and rationale (short explanation). Do not return any prose outside the JSON object."
+            "You are a classifier for Chubb TSG-for-AI submissions. "
+            "Choose one or more categories from: Consumer of Internal AI, Consumer of External AI, Internal AI Builder, building_permit, tsg_general. "
+            "If more than one applies, return application_type as a comma-separated list (e.g., Consumer of External AI, Internal AI Builder). "
+            "Return a JSON object with fields: application_type (string), confidence (float between 0 and 1), and rationale (short explanation). "
+            "Do not return any prose outside the JSON object."
         )
         messages = [
             {"role": "system", "content": instructions},
@@ -525,3 +712,36 @@ class OpenAIResponsesLLMClient:
         except Exception as e:
             raise ValueError(f"Failed to parse flowchart JSON: {output_text}") from e
         return FlowchartModel(**data)
+
+    def summarize_reasoning(
+        self,
+        *,
+        step: str,
+        question: str,
+        answer: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Generate a short, user-readable reasoning summary (no chain-of-thought)."""
+
+        payload = {
+            "step": step,
+            "question": question,
+            "answer": answer,
+            "context": context or {},
+        }
+        system = (
+            "You are a compliance officer assistant embedded in an intake workflow. "
+            "Write a concise 'reasoning summary' that is safe to show to end users. "
+            "Do NOT reveal chain-of-thought or internal deliberations. "
+            "Use 2–4 bullet points, plain language, max ~80 words."
+        )
+        resp = self._client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0.2,
+        )
+        text = resp.choices[0].message.content  # type: ignore[attr-defined]
+        return (text or "").strip()

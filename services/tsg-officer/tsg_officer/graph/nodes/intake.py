@@ -54,18 +54,17 @@ _APPLICATION_TYPES: List[str] = [
     "tsg_general",
 ]
 
+_AI_CATEGORIES: List[str] = [
+    "Consumer of Internal AI",
+    "Consumer of External AI",
+    "Internal AI Builder",
+]
+
 
 def _normalize_application_type(value: str) -> str:
-    """Normalize application type input for matching.
-
-    Accepts common variants like:
-    - "internal_ai_builder"
-    - "Internal-AI-Builder"
-    - "consumer of internal ai"
-    """
+    """Normalize application type input for matching."""
     v = (value or "").strip().strip('"').strip("'")
     v = re.sub(r"\s+", " ", v)
-    # unify separators
     v = v.replace("_", " ").replace("-", " ")
     v = re.sub(r"\s+", " ", v)
     return v.casefold()
@@ -83,9 +82,36 @@ def _canonical_application_type(value: str) -> str | None:
 
 def _application_type_pattern(canonical: str) -> str:
     """Regex that matches a canonical type allowing spaces/underscores/hyphens."""
-    # Example: "Consumer of Internal AI" -> r"consumer[ _-]+of[ _-]+internal[ _-]+ai"
     tokens = [re.escape(t) for t in canonical.split()]
     return r"\b" + r"[\s_-]+".join(tokens) + r"\b"
+
+
+def _extract_ai_categories(text: str) -> List[str]:
+    """Extract one or more Chubb AI categories from free text."""
+    if not text:
+        return []
+
+    hits: List[str] = []
+    for canonical in _AI_CATEGORIES:
+        if re.search(_application_type_pattern(canonical), text, re.I):
+            hits.append(canonical)
+
+    # Dedupe while keeping order
+    deduped: List[str] = []
+    for h in hits:
+        if h not in deduped:
+            deduped.append(h)
+    return deduped
+
+
+def _pick_primary_category(categories: List[str]) -> str:
+    """Pick a stable primary category for routing/labels."""
+    if not categories:
+        return "tsg_general"
+    # Prefer Internal AI Builder when present since it typically has the most controls.
+    if "Internal AI Builder" in categories:
+        return "Internal AI Builder"
+    return categories[0]
 
 
 def _last_user_text(state: TSGState) -> str:
@@ -102,16 +128,17 @@ def _try_parse_fields(text: str) -> Dict[str, Any]:
     if not text:
         return found
 
-    # Allow application type values with spaces, underscores, or hyphens.
-    # Examples:
-    # - application type: Consumer of Internal AI
-    # - application_type=internal_ai_builder
+    # application_type values with spaces/underscores/hyphens.
     m = re.search(r"application[_\s-]*type\s*[:=]\s*(.+)", text, re.I)
     if m:
         raw = (m.group(1) or "").strip()
-        # take only the first line if user pasted a paragraph
         raw = raw.splitlines()[0].strip().rstrip(".,;")
-        found["application_type"] = _canonical_application_type(raw) or raw
+        cats = _extract_ai_categories(raw)
+        if cats:
+            found["application_categories"] = cats
+            found["application_type"] = ", ".join(cats)
+        else:
+            found["application_type"] = _canonical_application_type(raw) or raw
 
     m = re.search(r"\bAPN\b\s*[:=]?\s*([0-9\-]+)", text, re.I)
     if m:
@@ -121,29 +148,28 @@ def _try_parse_fields(text: str) -> Dict[str, Any]:
     if m:
         found["bsn"] = m.group(1).strip()
 
-    # crude yes/no parse
     if re.search(r"needs[_\s-]*flowchart\s*[:=]\s*(yes|no|maybe)", text, re.I):
         v = re.search(r"(yes|no|maybe)", text, re.I).group(1).lower()  # type: ignore[union-attr]
         found["needs_flowchart"] = v
 
-    # Allow shorthand application type mention without a prefix.  If the text
-    # includes a known application type (e.g. "building_permit" or "tsg_general"),
-    # treat it as an explicit application_type override.  This helps users who
-    # reply with "It's for building_permit." without the "application type:" prefix.
-    for canonical in _APPLICATION_TYPES:
-        # Match allowing flexible separators/casing.
-        if re.search(_application_type_pattern(canonical), text, re.I):
-            found["application_type"] = canonical
-            break
+    # Shorthand category mention without a prefix.
+    cats = _extract_ai_categories(text)
+    if cats:
+        found["application_categories"] = cats
+        found["application_type"] = ", ".join(cats)
 
-    # If we captured an application_type but it's not canonical, try to canonicalize.
-    if "application_type" in found:
+    # Canonicalize single type if needed.
+    if "application_type" in found and "application_categories" not in found:
         found["application_type"] = _canonical_application_type(str(found["application_type"])) or found["application_type"]
 
     return found
 
 
 def _required_fields_for(application_type: str) -> List[str]:
+    """Required intake fields.
+
+    UX requirement: start with submission_text, then classify categories.
+    """
     if application_type == "building_permit":
         return [
             "project_address",
@@ -153,63 +179,104 @@ def _required_fields_for(application_type: str) -> List[str]:
             "submission_text",
             "needs_flowchart",
         ]
-    # default
-    return ["scope_summary", "submission_text"]
+
+    # Default for AI governance: we can run an initial checklist from submission_text.
+    return ["submission_text"]
 
 
 def make_intake_node(llm: LLMClient):
-    def intake(state: TSGState) -> Command[
-        Literal["intake", "checklist"]
-    ]:
+    def _classify_from_submission(intake_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Classify Chubb AI categories using submission_text (best-effort)."""
+        submission_text = str(intake_data.get("submission_text") or "").strip()
+        if not submission_text:
+            return {"application_type": intake_data.get("application_type"), "application_categories": intake_data.get("application_categories"), "classification_reason": None}
+
+        # If the user already provided categories explicitly, don't override.
+        existing_cats = intake_data.get("application_categories") or []
+        if isinstance(existing_cats, list) and existing_cats:
+            primary = _pick_primary_category(existing_cats)
+            return {"application_type": primary, "application_categories": existing_cats, "classification_reason": None}
+
+        guess = llm.classify_application_type(submission_text)
+        classification_reason = getattr(guess, "rationale", None)
+
+        guess_text = str(getattr(guess, "application_type", "") or "")
+        cats = _extract_ai_categories(guess_text)
+        if not cats:
+            # As a fallback, see if the submission itself explicitly names categories.
+            cats = _extract_ai_categories(submission_text)
+
+        if cats:
+            intake_data["application_categories"] = cats
+            intake_data["application_type"] = ", ".join(cats)
+            primary = _pick_primary_category(cats)
+            return {"application_type": primary, "application_categories": cats, "classification_reason": classification_reason}
+
+        # Otherwise accept the single predicted type.
+        canonical = _canonical_application_type(guess_text) or guess_text
+        intake_data["application_type"] = canonical
+        return {"application_type": canonical, "application_categories": [], "classification_reason": classification_reason}
+
+    def intake(state: TSGState) -> Command[Literal["intake", "checklist"]]:
         intake_data = dict(state.get("intake", {}) or {})
 
-        # Attempt to parse the last user message into fields (nice UX)
         last_user = _last_user_text(state)
         parsed = _try_parse_fields(last_user)
         if parsed:
             intake_data.update(parsed)
 
-        # Application type classification (only if missing)
-        application_type = state.get("application_type") or intake_data.get("application_type")
+        # Classification is driven by submission_text (not the first short answer).
         classification_reason = None
-        if not application_type and last_user.strip():
-            guess = llm.classify_application_type(last_user)
-            # We accept the guess and keep moving; user can override later.
-            application_type = guess.application_type
-            intake_data["application_type"] = application_type
-            # Capture the rationale if present on the guess (pydantic model)
-            try:
-                classification_reason = getattr(guess, "rationale", None)
-            except Exception:
-                classification_reason = None
+        primary_type = state.get("application_type") or intake_data.get("application_type")
+        categories: List[str] = []
 
-        # Determine required + missing fields
+        if isinstance(state.get("application_categories"), list):
+            categories = list(state.get("application_categories") or [])
+        if not categories and isinstance(intake_data.get("application_categories"), list):
+            categories = list(intake_data.get("application_categories") or [])
+
+        # If user provided a multi-category string in application_type, parse it.
+        if not categories and primary_type:
+            categories = _extract_ai_categories(str(primary_type))
+            if categories:
+                intake_data["application_categories"] = categories
+                intake_data["application_type"] = ", ".join(categories)
+
+        if str(intake_data.get("submission_text") or "").strip():
+            classified = _classify_from_submission(intake_data)
+            classification_reason = classified.get("classification_reason")
+            # Prefer categories if found.
+            cats2 = classified.get("application_categories") or []
+            if isinstance(cats2, list) and cats2:
+                categories = cats2
+                primary_type = classified.get("application_type") or primary_type
+            else:
+                primary_type = classified.get("application_type") or primary_type
+
+        # Determine required + missing fields.
         required_fields = state.get("required_fields") or []
         if not required_fields:
-            # if still unknown, ask for it
-            if not application_type:
-                required_fields = ["application_type"]
+            # UX: Always start by collecting submission_text.
+            has_submission = bool(str(intake_data.get("submission_text") or "").strip())
+            if not has_submission:
+                required_fields = ["submission_text"]
             else:
-                required_fields = _required_fields_for(application_type)
+                required_fields = _required_fields_for(primary_type or "tsg_general")
 
-        missing_fields = [f for f in required_fields if f not in intake_data or intake_data.get(f) in (None, "")]
+        missing_fields = [
+            f for f in required_fields
+            if f not in intake_data or intake_data.get(f) in (None, "")
+        ]
+
         next_phase = "INTAKE" if missing_fields else "CHECKLIST"
-        # Persist computed fields
-        # Base updates that always get applied before returning.  Include the
-        # LLM classification reasoning (if available) to aid debugging.  When
-        # using the OpenAIResponsesLLMClient or a model with a rationale field this
-        # will contain a natural language explanation of why the application type
-        # was chosen.
-        update_base = {
-            "application_type": application_type,
+
+        update_base: Dict[str, Any] = {
+            "application_type": primary_type,
+            "application_categories": categories,
             "intake": intake_data,
             "required_fields": required_fields,
             "missing_fields": missing_fields,
             "phase": next_phase,
-            # Use the classification_reason captured above if available; otherwise fall
-            # back to the last_reasoning_summary attribute on the llm (for older
-            # implementations that captured reasoning summaries).  This ensures
-            # that at least some rationale is stored when provided by the LLM.
             "classification_reasoning": classification_reason or getattr(llm, "last_reasoning_summary", None),
         }
 
@@ -222,17 +289,53 @@ def make_intake_node(llm: LLMClient):
                 "question": meta.get("q", ""),
                 "hint": meta.get("hint", ""),
             }
-            answer = interrupt(payload)  # pauses here until resumed
+            answer = interrupt(payload)
 
-            # Normalize answer a bit
-            if isinstance(answer, str):
-                answer_str = answer.strip()
-            else:
-                answer_str = str(answer).strip()
-
-            # Store answer
+            answer_str = answer.strip() if isinstance(answer, str) else str(answer).strip()
             intake_data[field] = answer_str
-            missing_fields = [f for f in required_fields if f not in intake_data or intake_data.get(f) in (None, "")]
+
+            # If we just got submission_text, classify categories now.
+            if field == "submission_text" and answer_str.strip():
+                classified = _classify_from_submission(intake_data)
+                classification_reason = classified.get("classification_reason")
+                cats2 = classified.get("application_categories") or []
+                if isinstance(cats2, list) and cats2:
+                    categories = cats2
+                    primary_type = classified.get("application_type") or primary_type
+                else:
+                    primary_type = classified.get("application_type") or primary_type
+
+                # Recompute required fields for building_permit if the classifier picked it.
+                required_fields = _required_fields_for(primary_type or "tsg_general")
+
+            missing_fields = [
+                f for f in required_fields
+                if f not in intake_data or intake_data.get(f) in (None, "")
+            ]
+
+            try:
+                ui_reasoning = llm.summarize_reasoning(
+                    step="intake",
+                    question=str(meta.get("q") or "").strip(),
+                    answer=answer_str,
+                    context={
+                        "field": field,
+                        "classified_categories": categories,
+                        "primary_application_type": primary_type,
+                        "remaining_fields": missing_fields,
+                    },
+                )
+            except Exception:
+                if missing_fields:
+                    ui_reasoning = (
+                        f"- Recorded **{field}** from your answer.\n"
+                        f"- Next: we still need {len(missing_fields)} more intake item(s) before running the checklist."
+                    )
+                else:
+                    ui_reasoning = (
+                        f"- Recorded **{field}** from your answer.\n"
+                        "- Next: intake is complete, so we'll run the checklist evaluation."
+                    )
 
             next_goto = "intake" if missing_fields else "checklist"
             next_phase = "INTAKE" if missing_fields else "CHECKLIST"
@@ -240,14 +343,17 @@ def make_intake_node(llm: LLMClient):
             return Command(
                 update={
                     **update_base,
+                    "application_type": primary_type,
+                    "application_categories": categories,
                     "intake": intake_data,
+                    "required_fields": required_fields,
                     "missing_fields": missing_fields,
                     "phase": next_phase,
+                    "classification_reasoning": classification_reason or getattr(llm, "last_reasoning_summary", None),
+                    "ui_reasoning_title": f"Intake reasoning — {field}",
+                    "ui_reasoning_summary": ui_reasoning,
                     "messages": [
-                        {
-                            "role": "assistant",
-                            "content": f"Got it. ({field} recorded.)",
-                        }
+                        {"role": "assistant", "content": f"Got it. ({field} recorded.)"}
                     ],
                     "audit_log": [
                         make_event(
@@ -270,7 +376,15 @@ def make_intake_node(llm: LLMClient):
                         "content": "Thanks — intake looks complete. I'll run the checklist evaluation now.",
                     }
                 ],
-                "audit_log": [make_event("intake_complete", {"application_type": application_type})],
+                "audit_log": [
+                    make_event(
+                        "intake_complete",
+                        {
+                            "application_type": primary_type,
+                            "application_categories": categories,
+                        },
+                    )
+                ],
             },
             goto="checklist",
         )

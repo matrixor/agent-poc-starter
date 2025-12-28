@@ -18,9 +18,9 @@ from tsg_officer.graph.nodes import (
     route,
     make_intake_node,
     make_checklist_node,
-    followup,
+    make_followup_node,
     make_diagram_node,
-    review,
+    make_review_node,
     finalize,
 )
 
@@ -63,9 +63,9 @@ def build_graph(*, settings: Optional[Settings] = None):
     builder.add_node("route", route)
     builder.add_node("intake", make_intake_node(llm))
     builder.add_node("checklist", make_checklist_node(llm, rules_repo))
-    builder.add_node("followup", followup)
+    builder.add_node("followup", make_followup_node(llm))
     builder.add_node("diagram", make_diagram_node(llm))
-    builder.add_node("review", review)
+    builder.add_node("review", make_review_node(llm))
     builder.add_node("finalize", finalize)
 
     # Entry
@@ -82,7 +82,46 @@ def build_graph(*, settings: Optional[Settings] = None):
 
 
 def _build_checkpointer(db_path: str):
-    """Create a SQLite checkpointer. Falls back to in-memory if unavailable."""
-    # Temporarily use MemorySaver to avoid database lock issues with multiple instances
-    from langgraph.checkpoint.memory import MemorySaver
-    return MemorySaver()
+    """Create a SQLite checkpointer.
+
+    We use SQLite so thread/case state is durable across:
+      - page refreshes
+      - browser sessions
+      - Streamlit server restarts
+
+    This enables the "Search session history" UX to actually resume a case by
+    Thread / Case ID.
+
+    If SQLite is unavailable for any reason, we fall back to in-memory.
+    """
+
+    try:
+        import sqlite3
+
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        path = Path(str(db_path)).expanduser().resolve()
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # NOTE: check_same_thread=False is OK; SqliteSaver uses an internal lock.
+        conn = sqlite3.connect(str(path), check_same_thread=False)
+        try:
+            # Reduce lock contention for multi-session Streamlit usage.
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+        except Exception:
+            # Non-fatal; continue with defaults.
+            pass
+
+        saver = SqliteSaver(conn)
+        try:
+            saver.setup()
+        except Exception:
+            # Non-fatal; some versions lazily set up tables.
+            pass
+        return saver
+
+    except Exception:
+        from langgraph.checkpoint.memory import MemorySaver
+
+        return MemorySaver()

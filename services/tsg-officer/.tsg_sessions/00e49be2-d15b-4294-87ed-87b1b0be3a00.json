@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "thread_id": "00e49be2-d15b-4294-87ed-87b1b0be3a00",
+  "saved_at": "2025-12-28T21:43:15.659997+00:00",
+  "chat": [
+    {
+      "id": "f2d6a327-3639-446a-82a9-5f5506cd387d",
+      "role": "assistant",
+      "content": "Hi — I'm TSG Virtual AI Officer. I'll help you complete TSG intake for AI and produce an auditable checklist.\n\n"
+    },
+    {
+      "id": "1994081a-b9f7-4928-bc57-88bfa8566047",
+      "role": "assistant",
+      "content": "Please paste the main submission text (or a short excerpt).\n\n*You can paste directly into chat. For large docs, use the sidebar upload.*"
+    },
+    {
+      "id": "754fa1e6-9fe2-44f0-b021-1d8ffce945a5",
+      "role": "user",
+      "content": "This project manages the access, security, and usage of cloud‑based vendor AI solutions that are hosted outside Chubb tenants, starting with Claude Code.\nThe solution establishes a governed integration pattern so Chubb employees (developers) can use Claude Code safely and consistently, with centralized control and observability."
+    },
+    {
+      "id": "1eeca255-ad2f-460c-867e-818ffc9e06e7",
+      "role": "assistant",
+      "content": "Got it. (submission_text recorded.)"
+    },
+    {
+      "id": "03c40ae9-3327-4174-bb8b-2ea355b908e3",
+      "role": "reasoning",
+      "title": "Checklist reasoning summary",
+      "content": "The submission correctly identifies the AI application category as Consumer of External AI and provides a clear rationale. However, it does not address required controls and practices for responsible AI, secrets management, monitoring, vendor risk, resilience, versioning, and other governance aspects. Additional information is required before approval."
+    },
+    {
+      "id": "79fdbcfd-00b0-4482-9fdf-c7ee100e5984",
+      "role": "assistant",
+      "content": "Initial checklist complete. Initial recommendation: **NEED_INFO** (pending clarifications)\n- FAIL: 14\n- UNKNOWN: 2\n\nI still need a few clarifications before we can approve:\n- PRINCIPLE-GOV-ALIGN: How does the Claude Code integration align with the Enterprise AI Architecture objectives for reliability, security, performance, cost, and responsibility? Please provide a brief mapping for each objective.\n- PRINCIPLE-RESP-AI: What responsible AI controls are in place for Claude Code (e.g., bias evaluation of generated code, safeguards against hallucinated or insecure code suggestions, human review requirements, and escalation paths for problematic outputs)? Please include any documented policies or procedures.\n- PRINCIPLE-EVIDENCE: Which specific artifacts will you provide at review (e.g., dataflow/architecture diagram, SLO dashboards, evaluation metrics for code quality, rollback/disablement playbooks, MCP/agent registrations if applicable)?\n- PRINCIPLE-RUNBOOKS: Where will operational runbooks for the Claude Code integration be stored, who owns them, and how will multi-region teams keep them up to date?\n- PRINCIPLE-MONITOR: What monitoring and alerting will you implement for the Claude Code integration (e.g., API error rates, latency, usage anomalies, hallucination or unsafe suggestion reports, tool success/failure)? Please describe key metrics and alert thresholds."
+    },
+    {
+      "id": "5894f793-b9fb-4ea6-8efb-2883cb7b2fa9",
+      "role": "assistant",
+      "content": "PRINCIPLE-GOV-ALIGN: How does the Claude Code integration align with the Enterprise AI Architecture objectives for reliability, security, performance, cost, and responsibility? Please provide a brief mapping for each objective.\n\n*Answer in 1–3 sentences. If not applicable, reply N/A.*"
+    }
+  ],
+  "awaiting_resume": true,
+  "graph_messages_len": 4,
+  "initialized": true,
+  "last_interrupt_payload": {
+    "type": "followup_question",
+    "index": 0,
+    "question": "PRINCIPLE-GOV-ALIGN: How does the Claude Code integration align with the Enterprise AI Architecture objectives for reliability, security, performance, cost, and responsibility? Please provide a brief mapping for each objective.",
+    "hint": "Answer in 1–3 sentences. If not applicable, reply N/A."
+  },
+  "ui_reasoning_title": "Checklist reasoning summary",
+  "ui_reasoning_summary": "The submission correctly identifies the AI application category as Consumer of External AI and provides a clear rationale. However, it does not address required controls and practices for responsible AI, secrets management, monitoring, vendor risk, resilience, versioning, and other governance aspects. Additional information is required before approval.",
+  "user_waiting_for_reviewer": false,
+  "phase": "NEED_INFO",
+  "reviewer_decision": null,
+  "overall_recommendation": "NEED_INFO"
+}

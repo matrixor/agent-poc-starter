@@ -23,9 +23,25 @@ def make_diagram_node(llm: LLMClient):
             }
             answer = interrupt(payload)
             desc = str(answer).strip()
+
+            # UI reasoning summary (safe, user-readable)
+            try:
+                ui_reasoning = llm.summarize_reasoning(
+                    step="diagram_process",
+                    question=str(payload.get("question") or "").strip(),
+                    answer=desc,
+                    context={},
+                )
+            except Exception:
+                ui_reasoning = (
+                    "- Captured the process steps you described.\n"
+                    "- Next: we'll generate a draft Mermaid flowchart and ask you to confirm it."
+                )
             return Command(
                 update={
                     "process_description": desc,
+                    "ui_reasoning_title": "Diagram reasoning — process description",
+                    "ui_reasoning_summary": ui_reasoning,
                     "messages": [{"role": "assistant", "content": "Thanks — generating a draft flowchart now."}],
                     "audit_log": [make_event("process_description_collected", {"preview": desc[:120]})],
                 },
@@ -45,6 +61,12 @@ def make_diagram_node(llm: LLMClient):
                     # OpenAIResponsesLLMClient this explains how the flowchart was
                     # derived from the provided description.
                     "flowchart_reasoning": getattr(llm, "last_reasoning_summary", None),
+                    # UI panel (displayed under the user's input area in Streamlit)
+                    "ui_reasoning_title": "Diagram reasoning — draft flowchart",
+                    "ui_reasoning_summary": (
+                        getattr(llm, "last_reasoning_summary", None)
+                        or "Generated a draft Mermaid flowchart from your described steps. Please confirm it matches the real process."
+                    ),
                     "messages": [
                         {
                             "role": "assistant",
@@ -71,10 +93,25 @@ def make_diagram_node(llm: LLMClient):
             ans = str(answer).strip().lower()
 
             if ans in ("yes", "y", "correct", "confirmed"):
+                # UI reasoning summary
+                try:
+                    ui_reasoning = llm.summarize_reasoning(
+                        step="diagram_confirm",
+                        question=str(payload.get("question") or "").strip(),
+                        answer=str(answer),
+                        context={"confirmed": True},
+                    )
+                except Exception:
+                    ui_reasoning = (
+                        "- Flowchart confirmed as accurate.\n"
+                        "- Next: moving to the reviewer decision step."
+                    )
                 return Command(
                     update={
                         "flowchart_confirmed": True,
                         "phase": "REVIEW",
+                        "ui_reasoning_title": "Diagram reasoning — confirmation",
+                        "ui_reasoning_summary": ui_reasoning,
                         "messages": [{"role": "assistant", "content": "Confirmed. Moving to reviewer decision step."}],
                         "audit_log": [make_event("flowchart_confirmed", {})],
                     },
@@ -83,6 +120,19 @@ def make_diagram_node(llm: LLMClient):
 
             # If user provided corrections, treat it as new description and regenerate
             new_desc = str(answer).strip()
+            # UI reasoning summary (about what we will do with the corrections)
+            try:
+                ui_reasoning = llm.summarize_reasoning(
+                    step="diagram_confirm",
+                    question=str(payload.get("question") or "").strip(),
+                    answer=new_desc,
+                    context={"confirmed": False},
+                )
+            except Exception:
+                ui_reasoning = (
+                    "- Received your corrections for the flowchart.\n"
+                    "- Next: regenerating the Mermaid diagram from your updated steps."
+                )
             flow = llm.generate_flowchart(process_description=new_desc)
             new_mermaid = flow.mermaid
             return Command(
@@ -91,6 +141,8 @@ def make_diagram_node(llm: LLMClient):
                     "flowchart_mermaid": new_mermaid,
                     "flowchart_confirmed": False,
                     "flowchart_reasoning": getattr(llm, "last_reasoning_summary", None),
+                    "ui_reasoning_title": "Diagram reasoning — corrections",
+                    "ui_reasoning_summary": ui_reasoning,
                     "messages": [
                         {
                             "role": "assistant",

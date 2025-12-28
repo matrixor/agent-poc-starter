@@ -24,6 +24,12 @@ pip install -e .
 streamlit run app/streamlit_app.py
 ```
 
+Reviewer mode (simulated):
+- Open the app with `?role=reviewer` in the URL to reveal the reviewer-only
+  decision controls (APPROVE / CONDITIONAL_APPROVE / REJECT / NEED_INFO).
+  Without this flag, the applicant view will show that the final decision is
+  pending reviewer approval.
+
 By default this runs with a **Mock LLM** (so you can test the flow without any API keys).
 
 ---
