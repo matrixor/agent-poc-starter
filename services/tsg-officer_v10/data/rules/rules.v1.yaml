@@ -1,0 +1,451 @@
+rules:
+  - rule_id: PRINCIPLE-CATEGORY
+    title: Submission category identified
+    description: Applicants must identify which Chubb AI application scenario applies so reviewers know the required controls.
+    severity: BLOCKER
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["category", "scenario"]
+    theme: Intake
+    question: "Which Chubb AI category (Consumer of Internal AI, Consumer of External AI, Internal AI Builder) best describes this project, and why?"
+    evidence_expectation: "Explicit category choice tied to framework scenarios."
+    required_evidence:
+      - "Chosen scenario name aligned to framework section 2"
+      - "One-sentence rationale referencing the primary usage context"
+    references:
+      - "framework.docx §2"
+    checks:
+      - id: declares_category
+        mandatory: true
+        description: "Answer names one of the approved categories."
+      - id: provides_rationale
+        mandatory: false
+        description: "Answer contains a short justification referencing the scenario definition."
+
+  - rule_id: PRINCIPLE-GOV-ALIGN
+    title: Alignment to enterprise AI principles
+    description: Submissions must map to the Enterprise AI Architecture objectives.
+    severity: WARN
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["principles", "architecture", "alignment"]
+    theme: Governance
+    question: "How does the solution align to the Enterprise AI Architecture objectives (reliability, security, performance, cost, responsibility)?"
+    evidence_expectation: "Narrative mapping controls to each pillar."
+    required_evidence:
+      - "Reference to reliability and operational excellence measures"
+      - "Reference to security or compliance controls"
+      - "Reference to performance, cost, or responsibility considerations"
+    references:
+      - "framework.docx §§1,3,4"
+    depends_on: [PRINCIPLE-SCOPE]
+    checks:
+      - id: covers_reliability
+        mandatory: true
+        description: "Answer mentions reliability or operational excellence controls."
+      - id: covers_security
+        mandatory: true
+        description: "Answer cites security or compliance safeguards."
+      - id: covers_cost_or_responsibility
+        mandatory: false
+        description: "Answer touches on cost management or responsible AI practices."
+
+  - rule_id: PRINCIPLE-RESP-AI
+    title: Responsible AI controls documented
+    description: High-impact workloads must describe responsible AI controls and governance.
+    severity: BLOCKER
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["responsible", "bias", "hallucination", "escalation"]
+    theme: Governance
+    question: "List responsible AI controls applied (bias evaluation, hallucination safeguards, escalation path) and link to evidence."
+    evidence_expectation: "Evaluation reports, governance approvals, or policy references."
+    required_evidence:
+      - "List of bias or fairness evaluations performed"
+      - "Description of hallucination or safety guardrails"
+      - "Escalation or override process"
+    references:
+      - "framework.docx governance guidance"
+    depends_on: [PRINCIPLE-GOV-ALIGN]
+    checks:
+      - id: bias_evaluation
+        mandatory: true
+        description: "Answer cites bias/fairness evaluation or plan."
+      - id: hallucination_controls
+        mandatory: true
+        description: "Answer outlines hallucination or output safety controls."
+      - id: escalation_defined
+        mandatory: true
+        description: "Answer identifies escalation/override path."
+
+  - rule_id: PRINCIPLE-EVIDENCE
+    title: Evidence-at-review artifacts planned
+    description: Applicants must state which artifacts they will supply for review.
+    severity: WARN
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["evidence", "artifact", "review"]
+    theme: Governance
+    question: "What artifacts will you provide for Evidence at Review (dataflow diagram, SLO dashboards, MCP/agent registrations, rollback playbooks, evaluation metrics)?"
+    evidence_expectation: "Inventory of artifacts with storage locations or owners."
+    required_evidence:
+      - "List of artifacts planned for review"
+      - "Location or owner for each artifact"
+    references:
+      - "framework.docx Evidence checklist"
+    depends_on: [PRINCIPLE-RESP-AI]
+    checks:
+      - id: artifact_inventory
+        mandatory: true
+        description: "Answer lists relevant artifacts (diagram, dashboards, registrations, etc.)."
+      - id: artifact_location
+        mandatory: false
+        description: "Answer notes where artifacts reside or who owns them."
+
+  - rule_id: PRINCIPLE-AUTO-CICD
+    title: Automation and CI/CD described
+    description: Builders must describe automation across data prep, training, deployment, and monitoring pipelines.
+    severity: WARN
+    applies_to: ["Internal AI Builder"]
+    keywords: ["pipeline", "automation", "CI/CD"]
+    theme: Operational Excellence
+    question: "Explain how data prep, training, deployment, and monitoring pipelines are automated (tooling, platforms)."
+    evidence_expectation: "Pipeline description referencing approved tools."
+    required_evidence:
+      - "Mention of automation tooling for data, training, deployment, and monitoring"
+      - "Statement confirming use of approved platforms"
+    references:
+      - "framework.docx §4.1"
+    depends_on: [PRINCIPLE-EVIDENCE]
+    checks:
+      - id: automation_pipeline
+        mandatory: true
+        description: "Answer lists automation for each lifecycle stage (data, training, deployment, monitoring)."
+      - id: approved_tooling
+        mandatory: true
+        description: "Answer references approved tools/platforms (e.g., AI Studio, Vertex)."
+
+  - rule_id: PRINCIPLE-RUNBOOKS
+    title: Runbooks and collaboration documented
+    description: Teams must maintain runbooks and collaboration approaches across regions.
+    severity: INFO
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["runbook", "collaboration"]
+    theme: Operational Excellence
+    question: "Where are runbooks stored and how do multi-region teams maintain them?"
+    evidence_expectation: "Runbook repository reference and maintenance process."
+    required_evidence:
+      - "Location or tool where runbooks are stored"
+      - "Description of how teams collaborate on updates"
+    references:
+      - "framework.docx §4.1"
+    depends_on: [PRINCIPLE-AUTO-CICD]
+    checks:
+      - id: runbook_location
+        mandatory: true
+        description: "Answer identifies the repository or system for runbooks."
+      - id: collaboration_process
+        mandatory: false
+        description: "Answer explains how teams coordinate updates."
+
+  - rule_id: PRINCIPLE-MONITOR
+    title: Monitoring and feedback loop in place
+    description: Monitoring for drift, performance, and agent behavior must be described.
+    severity: WARN
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["monitor", "alert", "drift", "hallucination"]
+    theme: Operational Excellence
+    question: "What monitoring covers data drift, model performance, hallucination rate, and tool success? Include alert thresholds."
+    evidence_expectation: "Monitoring dashboards, alert definitions, or runbooks."
+    required_evidence:
+      - "Metrics or dashboards covering model/agent performance"
+      - "Alert thresholds or response procedures"
+    references:
+      - "framework.docx §4.1"
+    depends_on: [PRINCIPLE-AUTO-CICD]
+    checks:
+      - id: monitoring_metrics
+        mandatory: true
+        description: "Answer mentions metrics/dashboards for drift or performance."
+      - id: alerting_thresholds
+        mandatory: true
+        description: "Answer includes alert thresholds or notification criteria."
+      - id: feedback_loop
+        mandatory: false
+        description: "Answer notes how monitoring feeds improvements."
+
+  - rule_id: PRINCIPLE-SECRETS
+    title: Secrets management defined
+    description: Secrets must be stored securely with rotation controls.
+    severity: BLOCKER
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["secret", "key vault", "credential"]
+    theme: Security & Compliance
+    question: "How are API keys/credentials stored (Key Vault, rotation schedule) and who has access?"
+    evidence_expectation: "Secrets management summary with access controls."
+    required_evidence:
+      - "Description of secret storage mechanism (e.g., Key Vault)"
+      - "Statement on access controls and rotation practices"
+    references:
+      - "framework.docx §4.2"
+    depends_on: [PRINCIPLE-RESP-AI]
+    checks:
+      - id: uses_approved_secret_store
+        mandatory: true
+        description: "Answer states that secrets reside in an approved store (e.g., Key Vault)."
+      - id: no_hard_coded_secrets
+        mandatory: true
+        description: "Answer confirms secrets are not stored in code/config/environment variables."
+      - id: rotation_practice_described
+        mandatory: false
+        description: "Answer mentions rotation cadence or lifecycle management."
+
+  - rule_id: PRINCIPLE-SAFETY
+    title: Safety filters implemented
+    description: Describe PII filtering, jailbreak detection, and harmful content safeguards.
+    severity: WARN
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["PII", "jailbreak", "safety"]
+    theme: Security & Compliance
+    question: "Describe PII filtering, jailbreak detection, and harmful content safeguards in the agent workflow."
+    evidence_expectation: "List of safety controls and integration points."
+    required_evidence:
+      - "PII filtering mechanisms"
+      - "Jailbreak detection or prevention approach"
+      - "Content moderation or harmful output controls"
+    references:
+      - "framework.docx §4.2"
+    depends_on: [PRINCIPLE-SECRETS]
+    checks:
+      - id: pii_filtering
+        mandatory: true
+        description: "Answer explains how PII is filtered or redacted."
+      - id: jailbreak_detection
+        mandatory: true
+        description: "Answer covers jailbreak or abuse prevention mechanisms."
+      - id: harmful_content_controls
+        mandatory: false
+        description: "Answer references harmful content review or moderation."
+
+  - rule_id: PRINCIPLE-VENDOR
+    title: Vendor risk addressed
+    description: External AI service usage must reference vendor risk and data residency assurances.
+    severity: WARN
+    applies_to: ["Consumer of External AI"]
+    keywords: ["vendor", "residency", "risk"]
+    theme: Security & Compliance
+    question: "Share vendor risk assessment status and data residency assurances for external AI services."
+    evidence_expectation: "Risk assessment report or approval reference."
+    required_evidence:
+      - "Vendor risk assessment completion status"
+      - "Data residency or data handling assurances"
+    references:
+      - "framework.docx §4.2 vendor guidance"
+    depends_on: [PRINCIPLE-SECRETS]
+    checks:
+      - id: risk_assessment_status
+        mandatory: true
+        description: "Answer states status or outcome of vendor risk assessment."
+      - id: data_residency
+        mandatory: true
+        description: "Answer affirms data residency/sovereignty requirements are met."
+      - id: vendor_controls
+        mandatory: false
+        description: "Answer mentions contractual or technical safeguards with vendor."
+
+  - rule_id: PRINCIPLE-RESILIENCE
+    title: Resilience strategy defined
+    description: Systems must document retries, backoff, circuit breakers, and fallbacks for downstream AI services.
+    severity: WARN
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["retry", "circuit", "fallback"]
+    theme: Reliability
+    question: "Detail retries/backoff, circuit breakers, and fallbacks for downstream AI services."
+    evidence_expectation: "Architecture resilience notes or runbooks."
+    required_evidence:
+      - "Retry and backoff approach"
+      - "Circuit breaker or fail-safe strategy"
+      - "Fallback handling for degraded service"
+    references:
+      - "framework.docx §4.3"
+    depends_on: [PRINCIPLE-MONITOR]
+    checks:
+      - id: retry_strategy
+        mandatory: true
+        description: "Answer describes retry/backoff policies."
+      - id: circuit_breaker
+        mandatory: true
+        description: "Answer documents circuit breaker or equivalent mechanism."
+      - id: fallback_path
+        mandatory: false
+        description: "Answer mentions fallback flow or graceful degradation."
+
+  - rule_id: PRINCIPLE-VERSIONS
+    title: Versioning and rollback managed
+    description: Teams must explain model/prompt version tracking, evaluation gates, and rollback procedures.
+    severity: WARN
+    applies_to: ["Consumer of External AI", "Internal AI Builder"]
+    keywords: ["Version", "rollback", "prompt"]
+    theme: Reliability
+    question: "How are model/prompt versions tracked, evaluated, and rolled back?"
+    evidence_expectation: "Version control workflow description with evaluation gates."
+    required_evidence:
+      - "Version control system or registry used"
+      - "Evaluation or approval gate prior to release"
+      - "Rollback or fallback procedure"
+    references:
+      - "framework.docx §4.3"
+    depends_on: [PRINCIPLE-RESILIENCE]
+    checks:
+      - id: version_tracking
+        mandatory: true
+        description: "Answer names system/process for version tracking."
+      - id: evaluation_gate
+        mandatory: true
+        description: "Answer states evaluation or approval gating before promotion."
+      - id: rollback_process
+        mandatory: true
+        description: "Answer outlines rollback or revert plan."
+
+  - rule_id: PRINCIPLE-PERF
+    title: Performance targets validated
+    description: Load and latency targets must be stated with validation methods.
+    severity: INFO
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["latency", "canary", "performance"]
+    theme: Performance & Cost
+    question: "What load/latency targets apply and how are they validated (canary releases, synthetic tests)?"
+    evidence_expectation: "Performance test results or monitoring thresholds."
+    required_evidence:
+      - "Defined performance or latency targets"
+      - "Description of validation method (canary, synthetic tests, etc.)"
+    references:
+      - "framework.docx §§4.4-4.5"
+    depends_on: [PRINCIPLE-VERSIONS]
+    checks:
+      - id: target_defined
+        mandatory: true
+        description: "Answer specifies performance/latency targets."
+      - id: validation_method
+        mandatory: true
+        description: "Answer states how performance is validated."
+      - id: monitoring_link
+        mandatory: false
+        description: "Answer references monitoring or dashboards tracking performance."
+
+  - rule_id: PRINCIPLE-COST
+    title: Cost governance in place
+    description: Applicants must outline cost tracking mechanisms and optimization levers.
+    severity: INFO
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["cost", "tracking", "optimization"]
+    theme: Performance & Cost
+    question: "Outline cost tracking (per-request logging, alerting) and optimization levers (model tiering, caching)."
+    evidence_expectation: "Cost dashboards or governance policies."
+    required_evidence:
+      - "Cost monitoring or reporting approach"
+      - "Optimization levers (tiering, caching, etc.)"
+    references:
+      - "framework.docx §§4.4-4.5"
+    depends_on: [PRINCIPLE-PERF]
+    checks:
+      - id: cost_tracking
+        mandatory: true
+        description: "Answer explains how cost is monitored or reported."
+      - id: optimization_levers
+        mandatory: true
+        description: "Answer lists one or more cost optimization tactics."
+      - id: alerting_controls
+        mandatory: false
+        description: "Answer mentions alerting or thresholds for cost anomalies."
+
+  - rule_id: PRINCIPLE-RETRIEVAL
+    title: Retrieval strategy documented
+    description: Knowledge retrieval processes must avoid anti-patterns and enforce metadata/permission controls.
+    severity: WARN
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["RAG", "metadata", "index"]
+    theme: Knowledge Management
+    question: "How is context assembled (RAG pipelines, metadata tagging, permission-aware indexing) to avoid retrieval anti-patterns?"
+    evidence_expectation: "Knowledge base design documentation."
+    required_evidence:
+      - "Overview of retrieval pipeline and metadata strategy"
+      - "Description of permission handling or access filtering"
+    references:
+      - "framework.docx §5"
+    depends_on: [PRINCIPLE-COST]
+    checks:
+      - id: metadata_strategy
+        mandatory: true
+        description: "Answer outlines metadata tagging or structuring approach."
+      - id: permission_controls
+        mandatory: true
+        description: "Answer explains how permission-aware indexing or filtering is enforced."
+      - id: anti_pattern_mitigation
+        mandatory: false
+        description: "Answer mentions actions to avoid common retrieval anti-patterns."
+
+  - rule_id: PRINCIPLE-GUARDRAILS
+    title: Guardrails against anti-patterns defined
+    description: Safeguards must prevent "God Mode" indexing, dumb chunking, and stale embeddings.
+    severity: INFO
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["guardrail", "index", "embedding"]
+    theme: Knowledge Management
+    question: 'What safeguards prevent "God Mode" indexing, dumb chunking, or stale embeddings?'
+    evidence_expectation: "Mitigation checklist or SOP references."
+    required_evidence:
+      - "Controls preventing over-broad indexing"
+      - "Chunking/embedding maintenance strategy"
+    references:
+      - "framework.docx §6"
+    depends_on: [PRINCIPLE-RETRIEVAL]
+    checks:
+      - id: permission_guardrails
+        mandatory: true
+        description: "Answer states how over-permissive indexing is avoided."
+      - id: embedding_refresh
+        mandatory: false
+        description: "Answer describes embedding refresh or maintenance cadence."
+
+  - rule_id: PRINCIPLE-DIAGRAM
+    title: Diagram artifact prepared
+    description: Flow diagrams showing orchestration across LLMs, tools, and data stores must be drafted when required.
+    severity: INFO
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["diagram", "mermaid", "workflow"]
+    theme: Flow Evidence
+    question: "Attach or plan the process/flow diagram showing orchestration across LLM, tools, and data stores."
+    evidence_expectation: "Draft diagram (e.g., Mermaid or PDF) or plan to produce it."
+    required_evidence:
+      - "Statement confirming diagram availability or production plan"
+      - "Reference to storage location or attachment"
+    references:
+      - "framework.docx Evidence"
+    depends_on: [PRINCIPLE-FLOW]
+    checks:
+      - id: diagram_available
+        mandatory: true
+        description: "Answer confirms a diagram exists or is in progress."
+      - id: diagram_location
+        mandatory: false
+        description: "Answer notes where the diagram is stored or how it will be delivered."
+
+  - rule_id: PRINCIPLE-WALKTHROUGH
+    title: Reviewer walkthrough prepared
+    description: Applicants should define how they will present the diagram and key controls during approval.
+    severity: INFO
+    applies_to: ["Consumer of Internal AI", "Consumer of External AI", "Internal AI Builder"]
+    keywords: ["walkthrough", "review", "agenda"]
+    theme: Flow Evidence
+    question: "How will you walk reviewers through the diagram during approval? Provide talking points or agenda."
+    evidence_expectation: "Narrative walkthrough outline or presentation plan."
+    required_evidence:
+      - "Outline of presentation or walkthrough flow"
+      - "Highlight of critical controls or checkpoints to cover"
+    references:
+      - "framework.docx Evidence"
+    depends_on: [PRINCIPLE-DIAGRAM]
+    checks:
+      - id: walkthrough_plan
+        mandatory: true
+        description: "Answer outlines steps or talking points for reviewer walkthrough."
+      - id: highlights_controls
+        mandatory: false
+        description: "Answer highlights controls or artifacts to emphasize during review."

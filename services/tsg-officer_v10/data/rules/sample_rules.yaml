@@ -1,0 +1,42 @@
+rules:
+  - rule_id: PRINCIPLE-ADDR
+    title: Project address provided
+    description: The submission must clearly state the project site address.
+    severity: BLOCKER
+    applies_to: ["building_permit"]
+    keywords: ["address", "project address"]
+
+  - rule_id: PRINCIPLE-APN
+    title: APN provided
+    description: The submission must include the Assessor's Parcel Number (APN).
+    severity: BLOCKER
+    applies_to: ["building_permit"]
+    keywords: ["APN"]
+
+  - rule_id: PRINCIPLE-BSN
+    title: BSN provided or explicitly marked N/A
+    description: Provide BSN if applicable; otherwise explicitly state N/A.
+    severity: WARN
+    applies_to: ["building_permit"]
+    keywords: ["BSN", "N/A"]
+
+  - rule_id: PRINCIPLE-SCOPE
+    title: Scope summary is clear
+    description: A short scope summary (2–5 bullets) describing the work is required.
+    severity: BLOCKER
+    applies_to: ["building_permit", "tsg_general"]
+    keywords: ["scope", "replace", "install", "modify"]
+
+  - rule_id: PRINCIPLE-TRAIN
+    title: Training plan / frequency documented
+    description: If operational staff training is required, document the training plan and frequency (e.g., new staff 2 hours; experienced staff quarterly refresh).
+    severity: WARN
+    applies_to: ["building_permit", "tsg_general"]
+    keywords: ["training", "2 hours", "quarterly"]
+
+  - rule_id: PRINCIPLE-FLOW
+    title: Process / flow diagram (if required)
+    description: If the workflow impacts operations or approvals, provide a process description or flow diagram.
+    severity: INFO
+    applies_to: ["building_permit", "tsg_general"]
+    keywords: ["flow", "diagram", "process"]

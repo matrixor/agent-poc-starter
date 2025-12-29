@@ -73,28 +73,6 @@ class Document(TypedDict, total=False):
     text: str
 
 
-class DiagramFile(TypedDict, total=False):
-    """Metadata reference to a user-provided diagram file.
-
-    IMPORTANT: We intentionally do *not* store raw bytes in workflow state.
-    The UI saves the upload to disk and only passes/stores this lightweight
-    metadata reference for auditability and to avoid bloating the checkpoint DB.
-    """
-
-    name: str
-    mime_type: str
-    path: str
-    size_bytes: int
-    sha256: str
-
-
-class PendingDiagramFollowup(TypedDict, total=False):
-    """Tracks which follow-up question triggered the diagram workflow."""
-
-    index: int
-    question: str
-
-
 class TSGState(TypedDict, total=False):
     # identity / workflow
     case_id: str
@@ -125,11 +103,6 @@ class TSGState(TypedDict, total=False):
     process_description: Optional[str]
     flowchart_mermaid: Optional[str]
     flowchart_confirmed: bool
-
-    # diagram evidence (new)
-    diagram_input_mode: Optional[Literal["upload", "generate"]]
-    diagram_upload: Optional[DiagramFile]
-    pending_diagram_followup: Optional[PendingDiagramFollowup]
 
     # completion
     final_message_sent: bool
@@ -179,12 +152,6 @@ def new_case_state(case_id: Optional[str] = None) -> TSGState:
         "process_description": None,
         "flowchart_mermaid": None,
         "flowchart_confirmed": False,
-
-        # diagram evidence
-        "diagram_input_mode": None,
-        "diagram_upload": None,
-        "pending_diagram_followup": None,
-
         "final_message_sent": False,
         "reviewer_decision": None,
         "audit_log": [],

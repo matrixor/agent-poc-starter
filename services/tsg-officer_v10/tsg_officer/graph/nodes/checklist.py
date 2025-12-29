@@ -209,19 +209,7 @@ def make_checklist_node(llm: LLMClient, rules_repo: RuleRepository):
         ]
 
         needs_flowchart = (str(intake.get("needs_flowchart") or "")).lower() in ("yes", "y", "true")
-
-        # A required diagram can be satisfied either by:
-        #   1) a generated Mermaid flowchart that the user confirmed, OR
-        #   2) an uploaded diagram file (stored as metadata reference in state).
-        diagram_upload = state.get("diagram_upload") or {}
-        has_uploaded_diagram = bool(
-            isinstance(diagram_upload, dict)
-            and (diagram_upload.get("path") or diagram_upload.get("name"))
-        )
-        has_flowchart = (
-            (bool(state.get("flowchart_mermaid")) and bool(state.get("flowchart_confirmed")))
-            or has_uploaded_diagram
-        )
+        has_flowchart = bool(state.get("flowchart_mermaid")) and bool(state.get("flowchart_confirmed"))
 
         if followups:
             if answered_before:

@@ -1,0 +1,193 @@
+{
+  "$defs": {
+    "ChecklistItemModel": {
+      "properties": {
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NA",
+            "UNKNOWN"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "BLOCKER",
+            "WARN",
+            "INFO"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceModel"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "missing": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing",
+          "type": "array"
+        },
+        "rationale": {
+          "description": "Short explanation for PASS/FAIL/UNKNOWN/NA.",
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "title",
+        "description",
+        "status",
+        "severity",
+        "confidence",
+        "rationale"
+      ],
+      "title": "ChecklistItemModel",
+      "type": "object"
+    },
+    "EvidenceModel": {
+      "properties": {
+        "doc_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Internal document identifier.",
+          "title": "Doc Id"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Filename or label for the evidence source.",
+          "title": "Source"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Page number if applicable (1-indexed).",
+          "title": "Page"
+        },
+        "excerpt": {
+          "description": "A short excerpt supporting the evaluation.",
+          "title": "Excerpt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "excerpt"
+      ],
+      "title": "EvidenceModel",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "description": "Schema version for audit/compatibility.",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "application_type": {
+      "title": "Application Type",
+      "type": "string"
+    },
+    "overall_recommendation": {
+      "enum": [
+        "APPROVE",
+        "CONDITIONAL_APPROVE",
+        "REJECT",
+        "NEED_INFO"
+      ],
+      "title": "Overall Recommendation",
+      "type": "string"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "checklist": {
+      "items": {
+        "$ref": "#/$defs/ChecklistItemModel"
+      },
+      "title": "Checklist",
+      "type": "array"
+    },
+    "blocking_issues": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Blocking Issues",
+      "type": "array"
+    },
+    "followup_questions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Followup Questions",
+      "type": "array"
+    },
+    "generated_at": {
+      "description": "ISO timestamp when report was generated.",
+      "title": "Generated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "case_id",
+    "application_type",
+    "overall_recommendation",
+    "summary",
+    "checklist"
+  ],
+  "title": "ChecklistReportModel",
+  "type": "object"
+}

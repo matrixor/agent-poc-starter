@@ -6,7 +6,6 @@ load_dotenv()  # loads .env into os.environ
 
 import json
 import html
-import hashlib
 import re
 from pathlib import Path
 import uuid
@@ -60,25 +59,6 @@ def _session_store_dir() -> Path:
     return d
 
 
-def _uploads_store_dir() -> Path:
-    """Directory where user-uploaded diagram files are stored.
-
-    We intentionally store uploads on disk and only keep metadata references in
-    LangGraph state to avoid bloating the checkpoint DB.
-    """
-
-    try:
-        settings = Settings.from_env()
-        db_path = Path(settings.checkpoint_db).expanduser().resolve()
-        base = db_path.parent
-    except Exception:
-        base = Path(__file__).resolve().parent.parent
-
-    d = base / ".tsg_uploads"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
 _SAFE_ID_RE = re.compile(r"[^a-zA-Z0-9_.-]")
 
 
@@ -87,77 +67,6 @@ def _session_file(thread_id: str) -> Path:
     if not safe:
         safe = "unknown"
     return _session_store_dir() / f"{safe}.json"
-
-
-_ALLOWED_DIAGRAM_EXTS = {
-    "png",
-    "jpg",
-    "jpeg",
-    "svg",
-    "pdf",
-    "drawio",
-}
-
-
-def _safe_filename(name: str) -> str:
-    """Best-effort filename sanitizer.
-
-    Prevents path traversal and removes characters that might cause issues on
-    different filesystems.
-    """
-
-    base = Path(name or "").name
-    safe = _SAFE_ID_RE.sub("_", base).strip("._")
-    return safe or "upload"
-
-
-def _save_diagram_upload(*, thread_id: str, uploaded_file) -> Dict[str, Any]:
-    """Persist an uploaded diagram to disk and return lightweight metadata.
-
-    The returned dict is safe to store in LangGraph state.
-    """
-
-    tid = _SAFE_ID_RE.sub("_", (thread_id or "").strip()) or "unknown"
-    case_dir = _uploads_store_dir() / tid
-    case_dir.mkdir(parents=True, exist_ok=True)
-
-    original_name = str(getattr(uploaded_file, "name", "diagram"))
-    safe_name = _safe_filename(original_name)
-    suffix = Path(safe_name).suffix
-    ext = suffix.lstrip(".").lower()
-    if ext and ext not in _ALLOWED_DIAGRAM_EXTS:
-        # Keep the file but normalize extension for safety.
-        ext = "bin"
-
-    stem = Path(safe_name).stem or "diagram"
-    unique = uuid.uuid4().hex[:8]
-    filename = f"{stem}_{unique}.{ext}" if ext else f"{stem}_{unique}"
-
-    data = uploaded_file.getvalue() if hasattr(uploaded_file, "getvalue") else bytes(uploaded_file)
-    if not isinstance(data, (bytes, bytearray)):
-        data = bytes(data)
-
-    file_path = case_dir / filename
-    file_path.write_bytes(data)
-
-    sha256 = hashlib.sha256(data).hexdigest()
-    size_bytes = int(len(data))
-
-    # Store as a relative-ish path so it is stable across environments.
-    rel_base = _uploads_store_dir().parent
-    try:
-        rel_path = file_path.relative_to(rel_base)
-        path_str = str(rel_path).replace("\\", "/")
-    except Exception:
-        path_str = str(file_path)
-
-    return {
-        "name": original_name,
-        "mime_type": str(getattr(uploaded_file, "type", "")) or "application/octet-stream",
-        "path": path_str,
-        "size_bytes": size_bytes,
-        "sha256": sha256,
-    }
 
 
 def _persist_ui_session(*, graph=None) -> None:
@@ -895,24 +804,7 @@ def _format_interrupt_question(payload: Any) -> str:
     if isinstance(payload, dict) and payload.get("question"):
         q = str(payload.get("question") or "")
         hint = str(payload.get("hint") or "")
-        options = payload.get("options")
-        opt_lines: List[str] = []
-        if isinstance(options, list) and options:
-            for opt in options:
-                if not isinstance(opt, dict):
-                    continue
-                label = str(opt.get("label") or opt.get("value") or "").strip()
-                if label:
-                    opt_lines.append(f"- {label}")
-
-        extras = ""
-        if opt_lines:
-            extras += "\n\nOptions:\n" + "\n".join(opt_lines)
-
-        if hint:
-            extras += f"\n\n*{hint}*"
-
-        return q + extras
+        return q + (f"\n\n*{hint}*" if hint else "")
     return str(payload)
 
 
@@ -1005,15 +897,6 @@ def _fast_feedback_message(payload: Any, answer_text: str) -> str:
     if ptype == "process_description":
         return "Thanks — generating a draft flowchart now."
 
-    if ptype == "diagram_mode":
-        key = (answer_text or "").strip().lower()
-        if key in ("upload", "file", "1"):
-            return "Okay — please upload the diagram file next."
-        return "Okay — I'll ask a few questions and draft a Mermaid diagram for your confirmation."
-
-    if ptype == "diagram_upload":
-        return "Thanks — diagram file received. Recording it now."
-
     if ptype == "flowchart_confirm":
         if answer_norm in ("yes", "y", "correct", "confirmed"):
             return "Confirmed. Moving to reviewer decision step."
@@ -1060,15 +943,7 @@ def _process_pending_turn(graph) -> None:
     """Run the graph for a staged user turn and append results to the transcript."""
     pending = st.session_state.get("pending_turn") or {}
     display_text = str(pending.get("user_text") or "").strip()
-
-    # resume_value may be a structured object (e.g. dict for file upload metadata).
-    raw_resume_value = pending.get("resume_value", None)
-    resume_value: Any = raw_resume_value if raw_resume_value is not None else display_text
-    if isinstance(resume_value, str):
-        resume_value = resume_value.strip()
-
-    # message_content is what we append into the graph's messages for audit.
-    # Always keep it as a string.
+    resume_value = str(pending.get("resume_value") or display_text).strip()
     message_content = str(pending.get("message_content") or display_text).strip()
     if not message_content:
         st.session_state.pending_turn = None
@@ -1222,14 +1097,6 @@ def main():
     # True when the workflow is waiting for a reviewer decision interrupt.
     review_pending = _review_decision_pending()
 
-    # Diagram interrupts: show specialized controls (radio + file uploader)
-    # instead of the free-text chat box.
-    payload = st.session_state.get("last_interrupt_payload")
-    ptype = str(payload.get("type") or "").strip().lower() if isinstance(payload, dict) else ""
-    diagram_mode_pending = bool(st.session_state.get("awaiting_resume", False)) and ptype == "diagram_mode"
-    diagram_upload_pending = bool(st.session_state.get("awaiting_resume", False)) and ptype == "diagram_upload"
-    diagram_pending = diagram_mode_pending or diagram_upload_pending
-
     # ------------------------------------------------------------------
     # Input / action area
     # ------------------------------------------------------------------
@@ -1341,101 +1208,6 @@ def main():
                     st.info("Waiting for the reviewer’s final decision…")
 
         # Do not show the normal chat input while awaiting reviewer decision.
-        submitted = False
-        user_text = ""
-
-    elif diagram_pending and not processing:
-        st.markdown("### Diagram")
-
-        # Mode selection (radio)
-        if diagram_mode_pending:
-            # Build options from the interrupt payload if available.
-            options = []
-            if isinstance(payload, dict) and isinstance(payload.get("options"), list):
-                for opt in payload.get("options") or []:
-                    if isinstance(opt, dict) and (opt.get("value") or opt.get("label")):
-                        options.append(
-                            (str(opt.get("label") or opt.get("value")), str(opt.get("value") or opt.get("label")))
-                        )
-            if not options:
-                options = [
-                    ("Upload a diagram file", "upload"),
-                    ("Answer questions so I can generate the diagram", "generate"),
-                ]
-
-            labels = [lbl for lbl, _ in options]
-            label_to_value = {lbl: val for lbl, val in options}
-
-            with st.form("diagram_mode_form", clear_on_submit=False):
-                chosen_label = st.radio(
-                    "Choose one",
-                    labels,
-                    index=0,
-                    key="diagram_mode_choice",
-                )
-                submit_choice = st.form_submit_button("Continue")
-
-            if submit_choice:
-                chosen_value = label_to_value.get(chosen_label, "generate")
-                user_turn_text = f"Diagram option: {chosen_label}"
-
-                append_message("user", user_turn_text)
-                ack = _fast_feedback_message(payload, chosen_value)
-                ack_id = append_message("assistant", ack)
-
-                st.session_state.pending_turn = {
-                    "user_text": user_turn_text,
-                    "resume": True,
-                    "ack_id": ack_id,
-                    "resume_value": chosen_value,
-                    "message_content": user_turn_text,
-                }
-
-                st.session_state.scroll_to_bottom = True
-                _persist_ui_session(graph=graph)
-                st.rerun()
-
-        # File upload
-        elif diagram_upload_pending:
-            with st.form("diagram_upload_form", clear_on_submit=True):
-                uploaded = st.file_uploader(
-                    "Upload diagram file",
-                    type=sorted(_ALLOWED_DIAGRAM_EXTS),
-                    accept_multiple_files=False,
-                    disabled=processing,
-                    key="diagram_upload_file",
-                )
-                submit_upload = st.form_submit_button("Upload and continue", disabled=processing)
-
-            if submit_upload:
-                if uploaded is None:
-                    st.warning("Please choose a file first.")
-                else:
-                    # Basic size guardrail (25MB)
-                    data = uploaded.getvalue()
-                    if isinstance(data, (bytes, bytearray)) and len(data) > 25 * 1024 * 1024:
-                        st.error("File is too large (max 25MB). Please upload a smaller diagram.")
-                    else:
-                        meta = _save_diagram_upload(thread_id=st.session_state.thread_id, uploaded_file=uploaded)
-                        user_turn_text = f"Uploaded diagram file: {uploaded.name}"
-
-                        append_message("user", user_turn_text)
-                        ack = _fast_feedback_message(payload, uploaded.name)
-                        ack_id = append_message("assistant", ack)
-
-                        st.session_state.pending_turn = {
-                            "user_text": user_turn_text,
-                            "resume": True,
-                            "ack_id": ack_id,
-                            "resume_value": meta,
-                            "message_content": user_turn_text,
-                        }
-
-                        st.session_state.scroll_to_bottom = True
-                        _persist_ui_session(graph=graph)
-                        st.rerun()
-
-        # Do not show the normal chat input while awaiting diagram widgets.
         submitted = False
         user_text = ""
 
