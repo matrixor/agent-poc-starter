@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import time
+import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol, Sequence
+
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from tsg_officer.schemas.models import (
     ApplicationTypeModel,
@@ -12,6 +16,231 @@ from tsg_officer.schemas.models import (
     FlowchartModel,
 )
 from tsg_officer.state.models import now_iso
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove common markdown code-fence wrappers."""
+
+    s = (text or "").strip()
+    if not s.startswith("```"):
+        return s
+
+    # Drop the opening fence line (``` or ```json)
+    s = re.sub(r"^```[a-zA-Z0-9_-]*\n?", "", s).strip()
+    # Drop the trailing fence
+    if s.endswith("```"):
+        s = s[: -len("```")].strip()
+    return s
+
+
+def _extract_first_json_object(text: str) -> Dict[str, Any]:
+    """Best-effort extraction of the first JSON object from a string."""
+
+    s = _strip_code_fences(text)
+
+    # First try: strict parse
+    try:
+        obj = json.loads(s)
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        pass
+
+    # Second try: find the first balanced {...} region.
+    start = s.find("{")
+    if start == -1:
+        raise ValueError("No JSON object found in model output.")
+
+    depth = 0
+    for i in range(start, len(s)):
+        ch = s[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = s[start : i + 1]
+                try:
+                    obj = json.loads(candidate)
+                except Exception as e:
+                    raise ValueError("Failed to parse JSON object from model output.") from e
+                if not isinstance(obj, dict):
+                    raise ValueError("Model output JSON was not an object.")
+                return obj
+
+    raise ValueError("Unterminated JSON object in model output.")
+
+
+def _normalize_confidence(value: Any, *, default: float = 0.5) -> float:
+    """Coerce LLM-provided confidence into a float in [0, 1]."""
+
+    if isinstance(value, (int, float)):
+        v = float(value)
+    elif isinstance(value, str):
+        s = value.strip().upper()
+        mapping = {"HIGH": 0.9, "MEDIUM": 0.6, "LOW": 0.3}
+        if s in mapping:
+            v = mapping[s]
+        else:
+            try:
+                v = float(value)
+            except Exception:
+                v = float(default)
+    else:
+        v = float(default)
+
+    # Clamp to [0, 1]
+    if v < 0.0:
+        return 0.0
+    if v > 1.0:
+        return 1.0
+    return v
+
+
+def _normalize_checklist_report_dict(
+    data: Dict[str, Any],
+    *,
+    case_id: str,
+    application_type: str,
+) -> Dict[str, Any]:
+    """Post-process raw checklist report JSON into the expected schema."""
+
+    if not isinstance(data, dict):
+        data = {}
+
+    data.setdefault("schema_version", "1.0")
+    data.setdefault("case_id", case_id)
+    data.setdefault("application_type", application_type)
+    data.setdefault("generated_at", now_iso())
+
+    # overall_recommendation
+    rec = str(data.get("overall_recommendation", "NEED_INFO") or "NEED_INFO").upper()
+    if rec not in ("APPROVE", "CONDITIONAL_APPROVE", "REJECT", "NEED_INFO"):
+        rec = "NEED_INFO"
+    data["overall_recommendation"] = rec
+
+    # summary
+    data["summary"] = str(data.get("summary", "") or "").strip() or "(no summary provided)"
+
+    checklist = data.get("checklist")
+    if not isinstance(checklist, list):
+        checklist = []
+
+    for item in checklist:
+        if not isinstance(item, dict):
+            continue
+
+        # Normalize severity
+        sev = str(item.get("severity", "") or "").upper()
+        if sev not in ("BLOCKER", "WARN", "INFO"):
+            mapping = {"HIGH": "BLOCKER", "MEDIUM": "WARN", "LOW": "INFO"}
+            item["severity"] = mapping.get(sev, "INFO")
+
+        # Normalize status
+        status = str(item.get("status", "") or "").upper()
+        if status not in ("PASS", "FAIL", "NA", "UNKNOWN"):
+            # If model says NEED_INFO, treat as UNKNOWN (missing info)
+            if status in ("NEED_INFO", "PENDING", "IN_PROGRESS"):
+                item["status"] = "UNKNOWN"
+            else:
+                item["status"] = "UNKNOWN"
+
+        # Normalize evidence: convert strings into dicts
+        evidence_list = item.get("evidence", []) or []
+        if not isinstance(evidence_list, list):
+            evidence_list = [evidence_list]
+        new_evidence = []
+        for ev in evidence_list:
+            if isinstance(ev, dict):
+                new_evidence.append(ev)
+            elif isinstance(ev, str) and ev.strip():
+                new_evidence.append({"source": "submission", "excerpt": ev.strip()})
+        item["evidence"] = new_evidence
+
+        # Normalize missing list
+        missing_list = item.get("missing", []) or []
+        if not isinstance(missing_list, list):
+            missing_list = [str(missing_list)]
+        item["missing"] = [str(m).strip() for m in missing_list if str(m).strip()]
+
+        # Normalize confidence
+        item["confidence"] = _normalize_confidence(item.get("confidence"), default=0.5)
+
+        # Ensure basic strings are present
+        item.setdefault("rule_id", "")
+        item.setdefault("title", "")
+        item.setdefault("description", "")
+        item.setdefault("rationale", "")
+
+    data["checklist"] = checklist
+
+    # Normalize blocking_issues
+    blocking_issues = data.get("blocking_issues", []) or []
+    if not isinstance(blocking_issues, list):
+        blocking_issues = [blocking_issues]
+    new_blocking: List[str] = []
+    for bi in blocking_issues:
+        if isinstance(bi, dict):
+            rule_id = bi.get("rule_id") or bi.get("id")
+            issue_msg = bi.get("issue") or bi.get("message") or bi.get("title")
+            if rule_id and issue_msg:
+                new_blocking.append(f"{rule_id}: {issue_msg}")
+            else:
+                try:
+                    new_blocking.append(json.dumps(bi, ensure_ascii=False))
+                except Exception:
+                    new_blocking.append(str(bi))
+        else:
+            new_blocking.append(str(bi))
+    data["blocking_issues"] = [s.strip() for s in new_blocking if str(s).strip()]
+
+    # Normalize followup_questions
+    followups_raw = data.get("followup_questions", [])
+    new_followups: List[str] = []
+    if isinstance(followups_raw, list):
+        for fq in followups_raw:
+            if isinstance(fq, dict):
+                rule_id = fq.get("rule_id") or fq.get("id")
+                question = fq.get("question") or fq.get("q") or fq.get("text")
+                justification = fq.get("justification") or fq.get("rationale") or fq.get("reason")
+
+                rule_id_s = str(rule_id).strip() if rule_id is not None else ""
+                q_s = str(question).strip() if question is not None else ""
+
+                if rule_id_s and q_s:
+                    s = f"{rule_id_s}: {q_s}"
+                elif q_s:
+                    s = q_s
+                else:
+                    try:
+                        s = json.dumps(fq, ensure_ascii=False)
+                    except Exception:
+                        s = str(fq)
+
+                j_s = str(justification).strip() if justification is not None else ""
+                if j_s:
+                    s = f"{s} — {j_s}"
+
+                new_followups.append(s)
+            else:
+                new_followups.append(str(fq))
+    elif followups_raw is None:
+        new_followups = []
+    else:
+        new_followups = [str(followups_raw)]
+
+    # Drop empties + de-duplicate while preserving order.
+    seen: set[str] = set()
+    followups_out: List[str] = []
+    for s in new_followups:
+        s2 = (s or "").strip()
+        if not s2 or s2 in seen:
+            continue
+        seen.add(s2)
+        followups_out.append(s2)
+    data["followup_questions"] = followups_out
+
+    return data
 
 
 class LLMClient(Protocol):
@@ -899,3 +1128,392 @@ class OpenAIResponsesLLMClient:
         )
         text = resp.choices[0].message.content  # type: ignore[attr-defined]
         return (text or "").strip()
+
+
+class ChubbGPTLLMClient:
+    """LLM backend that calls ChubbGPT via an API management gateway.
+
+    This implementation is intentionally "thin" and OpenAI-chat-like:
+    - It obtains a bearer token from the configured auth endpoint using
+      App_ID/App_Key/Resource headers (as in the provided notebook).
+    - It then sends chat payloads (messages + max_tokens) to the configured
+      proxy URL.
+
+    Environment variables (via Settings):
+        TSG_CHUBBGPT_PROXY_URL
+        TSG_CHUBBGPT_APP_ID
+        TSG_CHUBBGPT_APP_KEY
+        TSG_CHUBBGPT_RESOURCE
+        TSG_CHUBBGPT_AUTH_URL (optional)
+        TSG_CHUBBGPT_API_VERSION (optional)
+        TSG_CHUBBGPT_MODEL (optional)
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        proxy_url: str,
+        auth_url: str,
+        api_version: str,
+        app_id: str,
+        app_key: str,
+        resource: str,
+        # Optional routing params used by the canonical ChubbGPT gateway URL.
+        # If your proxy_url already includes these query parameters (or your
+        # gateway does not require them), they will be merged and the explicit
+        # values below will win.
+        cloud: str = "Azure",
+        service: str = "OpenAI",
+        region: str = "e-us2",
+        doc_type: str = "str",
+        conversation: str = "true",
+        username: str = "tsg-officer",
+        timeout_s: int = 60,
+    ):
+        try:
+            import requests  # type: ignore
+        except Exception as e:  # pragma: no cover
+            raise ImportError(
+                "requests is required for the chubbgpt provider. Install it via `pip install requests`."
+            ) from e
+
+        missing: List[str] = []
+        if not proxy_url:
+            missing.append("TSG_CHUBBGPT_PROXY_URL")
+        if not app_id:
+            missing.append("TSG_CHUBBGPT_APP_ID")
+        if not app_key:
+            missing.append("TSG_CHUBBGPT_APP_KEY")
+        if not resource:
+            missing.append("TSG_CHUBBGPT_RESOURCE")
+        if missing:
+            raise ValueError(
+                "ChubbGPT provider is selected but required configuration is missing: "
+                + ", ".join(missing)
+            )
+
+        self._requests = requests
+        self.model_name = model
+        self.proxy_url = proxy_url
+        self.auth_url = auth_url
+        self.api_version = (api_version or "1").strip() or "1"
+        self.app_id = app_id
+        self.app_key = app_key
+        self.resource = resource
+
+        self.cloud = cloud
+        self.service = service
+        self.region = region
+        self.doc_type = doc_type
+        self.conversation = conversation
+        self.username = username
+        self.timeout_s = int(timeout_s)
+
+        self.session_id = uuid.uuid4().hex
+        self._auth_token: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # Low-level HTTP helpers
+    # ------------------------------------------------------------------
+
+    def _get_token(self) -> str:
+        headers = {
+            "Content-Type": "application/json",
+            # The notebook uses `apiVersion` for token requests.
+            "apiVersion": self.api_version,
+            "App_ID": self.app_id,
+            "App_Key": self.app_key,
+            "Resource": self.resource,
+        }
+
+        resp = self._requests.post(self.auth_url, headers=headers, timeout=self.timeout_s)
+        if resp.status_code >= 400:
+            raise ValueError(
+                f"ChubbGPT token request failed ({resp.status_code}). "
+                "Check App_ID/App_Key/Resource and network access."
+            )
+
+        data = {}
+        try:
+            data = resp.json()
+        except Exception:
+            # Some gateways may return text on error; keep the message small.
+            raise ValueError("ChubbGPT token response was not valid JSON.")
+
+        token_type = str(data.get("token_type") or data.get("tokenType") or "Bearer").strip()
+        access_token = str(data.get("access_token") or data.get("accessToken") or "").strip()
+        if not access_token:
+            raise ValueError("ChubbGPT token response did not include access_token.")
+
+        return f"{token_type} {access_token}".strip()
+
+    def _build_proxy_url(self, *, model: str) -> str:
+        """Merge required query parameters onto the proxy URL."""
+
+        parts = urlsplit(self.proxy_url)
+        q = dict(parse_qsl(parts.query, keep_blank_values=True))
+
+        # Merge/override with the ChubbGPT-style routing params.
+        q.update(
+            {
+                "doc_type": self.doc_type,
+                "cloud": self.cloud,
+                "service": self.service,
+                "model": model,
+                "region": self.region,
+                "conversation": self.conversation,
+                "req_id": self.username,
+                "session_id": self.session_id,
+                # Keep these defaults from the reference notebook; gateways may ignore.
+                "embeddings": q.get("embeddings", "true"),
+                "preview": q.get("preview", "true"),
+            }
+        )
+
+        new_query = urlencode(q)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
+    def _is_openai_compatible_endpoint(self) -> bool:
+        """Heuristic: detect if the proxy URL looks like a standard OpenAI v1 endpoint.
+
+        Some enterprise gateways proxy the OpenAI API directly (e.g. .../v1/chat/completions).
+        Others (like the reference ChubbGPT notebook) use a custom router (e.g. .../openai/experimental)
+        with routing parameters in the query string.
+
+        We support both with a best-effort heuristic.
+        """
+
+        path = urlsplit(self.proxy_url).path.lower()
+        return (
+            "/v1/" in path
+            or path.endswith("/chat/completions")
+            or path.endswith("/completions")
+            or path.endswith("/responses")
+        )
+
+    def _chat(self, *, messages: List[Dict[str, str]], max_tokens: int = 4096, temperature: float = 0.0) -> str:
+        """Send a chat payload and return assistant text."""
+
+        # Lazily acquire token.
+        if not self._auth_token:
+            self._auth_token = self._get_token()
+
+        if self._is_openai_compatible_endpoint():
+            # Standard OpenAI proxy: send to the URL as-is.
+            url = self.proxy_url
+        else:
+            # ChubbGPT-style router: model + other routing are in query params.
+            url = self._build_proxy_url(model=self.model_name)
+
+        headers = {
+            "Content-Type": "application/json",
+            # The notebook uses `ApiVersion` for inference requests.
+            "ApiVersion": self.api_version,
+            # Some gateways are case-sensitive; include both just in case.
+            "apiVersion": self.api_version,
+            "Authorization": self._auth_token,
+        }
+
+        if self._is_openai_compatible_endpoint():
+            payload = {
+                "model": self.model_name,
+                "messages": messages,
+                "max_tokens": int(max_tokens),
+                "temperature": float(temperature),
+                "n": 1,
+            }
+        else:
+            payload = {
+                "username": self.username,
+                "session_id": self.session_id,
+                "max_tokens": int(max_tokens),
+                "n": 1,
+                "frequency_penalty": 0,
+                "presence_penalty": 0,
+                # Many gateways ignore temperature/top_p; include for compatibility.
+                "temperature": float(temperature),
+                "messages": messages,
+            }
+
+        # Minimal retry loop:
+        # - Refresh token on 401
+        # - Backoff on 429
+        backoff_s = 1.0
+        for attempt in range(6):
+            resp = self._requests.post(url, headers=headers, data=json.dumps(payload), timeout=self.timeout_s)
+
+            if resp.status_code == 401 and attempt < 2:
+                # Token expired/invalid: refresh once
+                self._auth_token = self._get_token()
+                headers["Authorization"] = self._auth_token
+                continue
+
+            if resp.status_code == 429 and attempt < 5:
+                time.sleep(backoff_s)
+                backoff_s = min(backoff_s * 2.0, 16.0)
+                continue
+
+            if resp.status_code >= 400:
+                # Avoid returning full response (may include internal details).
+                raise ValueError(f"ChubbGPT request failed ({resp.status_code}).")
+
+            # Success
+            data = {}
+            try:
+                data = resp.json()
+            except Exception as e:
+                raise ValueError("ChubbGPT response was not valid JSON.") from e
+
+            # Try OpenAI-like shape: {choices:[{message:{content}}]}
+            try:
+                choices = data.get("choices") or []
+                if choices and isinstance(choices, list):
+                    first = choices[0] or {}
+                    if isinstance(first, dict):
+                        msg = first.get("message")
+                        if isinstance(msg, dict) and msg.get("content") is not None:
+                            return str(msg.get("content") or "").strip()
+                        # Some gateways return `text` instead of `message`.
+                        if first.get("text") is not None:
+                            return str(first.get("text") or "").strip()
+            except Exception:
+                pass
+
+            # Last resort: stringify
+            return str(data).strip()
+
+        raise ValueError("ChubbGPT request failed after retries.")
+
+    # ------------------------------------------------------------------
+    # LLMClient interface
+    # ------------------------------------------------------------------
+
+    def classify_application_type(self, user_text: str) -> ApplicationTypeModel:
+        instructions = (
+            "You are a classifier for Chubb TSG-for-AI submissions. "
+            "Choose one or more categories from: Consumer of Internal AI, Consumer of External AI, Internal AI Builder, building_permit, tsg_general. "
+            "If more than one applies, return application_type as a comma-separated list (e.g., Consumer of External AI, Internal AI Builder). "
+            "Return a JSON object with fields: application_type (string), confidence (float between 0 and 1), and rationale (short explanation). "
+            "Do not return any prose outside the JSON object."
+        )
+        messages = [
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": user_text or ""},
+        ]
+        raw = self._chat(messages=messages, max_tokens=512, temperature=0.0)
+        data = _extract_first_json_object(raw)
+        # Normalize confidence + required fields
+        data.setdefault("application_type", "tsg_general")
+        data["confidence"] = _normalize_confidence(data.get("confidence"), default=0.6)
+        data.setdefault("rationale", "")
+        return ApplicationTypeModel(**data)
+
+    def generate_checklist_report(
+        self,
+        *,
+        case_id: str,
+        application_type: str,
+        rules: List[Dict[str, Any]],
+        submission_text: str,
+    ) -> ChecklistReportModel:
+        prompt = (
+            "You are an AI compliance officer. Evaluate the submission_text against the provided rules and "
+            "produce a checklist report as a JSON object. The JSON should conform to the following fields: "
+            "schema_version (string), case_id (string), application_type (string), overall_recommendation "
+            "(one of APPROVE, CONDITIONAL_APPROVE, REJECT, NEED_INFO), summary (string), checklist (array of "
+            "items each with rule_id, title, description, status, severity, confidence, evidence (list), "
+            "missing (list), rationale), blocking_issues (array), followup_questions (array), generated_at (ISO timestamp). "
+            "Rules are provided as a JSON list. The submission_text may be long. Only return the JSON object."
+        )
+        messages = [
+            {"role": "system", "content": prompt},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "case_id": case_id,
+                        "application_type": application_type,
+                        "rules": rules,
+                        "submission_text": submission_text,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ]
+        raw = self._chat(messages=messages, max_tokens=4096, temperature=0.0)
+        data = _extract_first_json_object(raw)
+        data = _normalize_checklist_report_dict(data, case_id=case_id, application_type=application_type)
+        return ChecklistReportModel(**data)
+
+    def generate_flowchart(self, *, process_description: str) -> FlowchartModel:
+        prompt = (
+            "You generate Mermaid flowchart code in the TD layout from a process description. "
+            "Return a JSON object with fields: mermaid (the code starting with 'flowchart TD'), "
+            "title (string), assumptions (array of strings), questions (array of strings). "
+            "Only return the JSON object."
+        )
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": process_description or ""},
+        ]
+        raw = self._chat(messages=messages, max_tokens=1024, temperature=0.0)
+        data = _extract_first_json_object(raw)
+        # Minimal defaults to avoid validation errors
+        data.setdefault("mermaid", "flowchart TD\n  A[Describe the process] --> B[Add steps]\n")
+        data.setdefault("title", "Process Flow")
+        data.setdefault("assumptions", [])
+        data.setdefault("questions", [])
+        return FlowchartModel(**data)
+
+    def summarize_reasoning(
+        self,
+        *,
+        step: str,
+        question: str,
+        answer: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        payload = {
+            "step": step,
+            "question": question,
+            "answer": answer,
+            "context": context or {},
+        }
+        system = (
+            "You are a compliance officer assistant embedded in an intake workflow. "
+            "Write a concise 'reasoning summary' that is safe to show to end users. "
+            "Do NOT reveal chain-of-thought or internal deliberations. "
+            "Use 2–4 bullet points, plain language, max ~80 words."
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        return self._chat(messages=messages, max_tokens=256, temperature=0.2)
+
+    def clarify_question(
+        self,
+        *,
+        question: str,
+        user_request: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        payload = {
+            "question": question,
+            "user_request": user_request,
+            "context": context or {},
+        }
+        system = (
+            "You are an AI governance/compliance officer assistant. "
+            "The user did not understand a question. "
+            "Explain the question and any key terms in plain language. "
+            "Then rewrite the original question in a simpler way and provide a short answer template (bullets). "
+            "Be concise (<= 180 words). "
+            "Do NOT reveal chain-of-thought or internal deliberations."
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        return self._chat(messages=messages, max_tokens=512, temperature=0.2)

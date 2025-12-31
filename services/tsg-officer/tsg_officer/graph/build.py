@@ -12,6 +12,7 @@ from tsg_officer.tools.llm import (
     MockLLMClient,
     OpenAIChatLLMClient,
     OpenAIResponsesLLMClient,
+    ChubbGPTLLMClient,
 )
 from tsg_officer.tools.rules import YamlRuleRepository
 from tsg_officer.graph.nodes import (
@@ -35,6 +36,16 @@ def build_dependencies(settings: Settings) -> Tuple[LLMClient, YamlRuleRepositor
         except Exception:
             # For backwards compatibility, fall back to ChatOpenAI wrapper
             llm = OpenAIChatLLMClient(model=settings.openai_model)  # type: ignore[assignment]
+    elif settings.llm_provider == "chubbgpt":
+        llm = ChubbGPTLLMClient(
+            model=settings.chubbgpt_model or settings.openai_model,
+            proxy_url=settings.chubbgpt_proxy_url,
+            auth_url=settings.chubbgpt_auth_url,
+            api_version=settings.chubbgpt_api_version,
+            app_id=settings.chubbgpt_app_id,
+            app_key=settings.chubbgpt_app_key,
+            resource=settings.chubbgpt_resource,
+        )  # type: ignore[assignment]
     else:
         llm = MockLLMClient()
 

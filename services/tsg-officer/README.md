@@ -49,6 +49,27 @@ export TSG_OPENAI_MODEL="gpt-4o-mini"   # or your org-approved model name
 
 > You can also implement your own `LLMClient` in `tsg_officer/tools/llm.py`.
 
+### Option B: ChubbGPT gateway proxy (enterprise)
+
+If you can't call OpenAI APIs directly, you can route through an internal API management gateway.
+
+Set:
+
+```bash
+export TSG_LLM_PROVIDER="chubbgpt"
+export TSG_CHUBBGPT_PROXY_URL="<gateway proxy url>"   # e.g., https://.../openai/experimental
+export TSG_CHUBBGPT_APP_ID="..."
+export TSG_CHUBBGPT_APP_KEY="..."
+export TSG_CHUBBGPT_RESOURCE="..."
+
+# Optional
+export TSG_CHUBBGPT_AUTH_URL="https://studiogateway.chubb.com/enterprise.operations.authorization?Identity=AAD"
+export TSG_CHUBBGPT_API_VERSION="1"
+export TSG_CHUBBGPT_MODEL="<org-approved model name>"
+```
+
+See `.env.example` for the full list of supported variables.
+
 ---
 
 ## What’s inside
