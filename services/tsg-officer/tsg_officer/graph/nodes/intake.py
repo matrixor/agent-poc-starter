@@ -7,6 +7,11 @@ from langgraph.types import Command, interrupt
 
 from tsg_officer.state.models import TSGState
 from tsg_officer.tools.audit import make_event
+from tsg_officer.tools.clarifications import (
+    MAX_EXPLANATION_REQUESTS_PER_QUESTION,
+    bump_counter,
+    looks_like_clarification_request,
+)
 from tsg_officer.tools.llm import LLMClient
 
 
@@ -292,6 +297,117 @@ def make_intake_node(llm: LLMClient):
             answer = interrupt(payload)
 
             answer_str = answer.strip() if isinstance(answer, str) else str(answer).strip()
+
+            # --------------------------------------------------------------
+            # Clarification handling
+            # If the user asks for explanation instead of answering, explain and re-ask.
+            # After 3 clarification requests for the same intake question, bypass it.
+            # --------------------------------------------------------------
+
+            if looks_like_clarification_request(answer_str):
+                key = f"intake::{field}"
+                new_counts, n = bump_counter(state.get("clarification_counts"), key)
+
+                # Too many clarification requests => bypass the field and move on.
+                if n > MAX_EXPLANATION_REQUESTS_PER_QUESTION:
+                    # For most fields, mark as N/A; for submission_text, drop the requirement
+                    # so the workflow can proceed using uploaded docs (if any).
+                    if field == "submission_text":
+                        intake_data[field] = ""
+                        required_fields = [f for f in required_fields if f != "submission_text"]
+                    else:
+                        intake_data[field] = "N/A"
+
+                    missing_fields = [
+                        f for f in required_fields
+                        if f not in intake_data or intake_data.get(f) in (None, "")
+                    ]
+                    next_goto = "intake" if missing_fields else "checklist"
+                    next_phase = "INTAKE" if missing_fields else "CHECKLIST"
+
+                    return Command(
+                        update={
+                            **update_base,
+                            "intake": intake_data,
+                            "required_fields": required_fields,
+                            "missing_fields": missing_fields,
+                            "phase": next_phase,
+                            "clarification_counts": new_counts,
+                            "ui_reasoning_title": f"Intake — bypassed {field}",
+                            "ui_reasoning_summary": (
+                                f"- You requested clarification **{n}** times for the same intake question (field: **{field}**).\n"
+                                "- To keep the workflow moving, we bypassed this question for now and moved on."
+                            ),
+                            "messages": [
+                                {
+                                    "role": "assistant",
+                                    "content": (
+                                        "I’ve provided clarification several times already. "
+                                        "To keep moving, I’m going to bypass this intake question for now. "
+                                        + (
+                                            "We’ll proceed using any uploaded documents as evidence." if field == "submission_text" else "I marked it as N/A."
+                                        )
+                                    ),
+                                }
+                            ],
+                            "audit_log": [
+                                make_event(
+                                    "intake_field_bypassed_after_clarifications",
+                                    {"field": field, "clarify_count": n},
+                                )
+                            ],
+                        },
+                        goto=next_goto,
+                    )
+
+                # Provide an explanation and re-ask the same question.
+                try:
+                    clarification = llm.clarify_question(
+                        question=str(meta.get("q") or "").strip(),
+                        user_request=answer_str,
+                        context={
+                            "field": field,
+                            "hint": str(meta.get("hint") or "").strip(),
+                            "step": "intake",
+                        },
+                    )
+                except Exception:
+                    hint = str(meta.get("hint") or "").strip()
+                    clarification = (
+                        "Sure — I can clarify.\n\n"
+                        + (f"Hint: {hint}\n\n" if hint else "")
+                        + "Please answer the original intake question. If you don’t have the value, reply 'N/A'.\n\n"
+                        "I’ll re-ask it next."
+                    )
+
+                remaining = MAX_EXPLANATION_REQUESTS_PER_QUESTION - n
+                remaining_line = (
+                    f"(You can ask for clarification {remaining} more time(s) for this question before we bypass it.)"
+                    if remaining > 0
+                    else "(If you ask for clarification again on this same question, we will bypass it to keep moving.)"
+                )
+
+                return Command(
+                    update={
+                        **update_base,
+                        "clarification_counts": new_counts,
+                        "ui_reasoning_title": f"Intake — clarification ({field})",
+                        "ui_reasoning_summary": (
+                            f"- You asked for clarification instead of answering (attempt {n}/{MAX_EXPLANATION_REQUESTS_PER_QUESTION}).\n"
+                            "- I provided an explanation and will re-ask the same intake question next.\n"
+                            f"- {remaining_line}"
+                        ),
+                        "messages": [{"role": "assistant", "content": clarification}],
+                        "audit_log": [
+                            make_event(
+                                "intake_clarification_provided",
+                                {"field": field, "clarify_count": n},
+                            )
+                        ],
+                    },
+                    goto="intake",
+                )
+
             intake_data[field] = answer_str
 
             # If we just got submission_text, classify categories now.

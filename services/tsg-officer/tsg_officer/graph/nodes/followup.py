@@ -7,6 +7,12 @@ from langgraph.types import Command, interrupt
 
 from tsg_officer.state.models import TSGState
 from tsg_officer.tools.audit import make_event
+from tsg_officer.tools.clarifications import (
+    BYPASSED_ANSWER_VALUE,
+    MAX_EXPLANATION_REQUESTS_PER_QUESTION,
+    bump_counter,
+    looks_like_clarification_request,
+)
 from tsg_officer.tools.llm import LLMClient
 
 
@@ -147,6 +153,110 @@ def make_followup_node(llm: LLMClient):
             answer_str = answer.strip()
         else:
             answer_str = str(answer).strip()
+
+        # --------------------------------------------------------------
+        # Clarification handling
+        # If the user asks for explanation instead of answering, explain and re-ask.
+        # After 3 clarification requests for the same question, bypass it.
+        # --------------------------------------------------------------
+
+        if not answer_str:
+            return Command(
+                update={
+                    "messages": [
+                        {
+                            "role": "assistant",
+                            "content": "I didn't catch an answer. Please reply with a short answer (or 'N/A' if it doesn't apply).",
+                        }
+                    ],
+                    "audit_log": [make_event("followup_empty_answer", {"index": idx, "q_preview": question[:80]})],
+                },
+                goto="followup",
+            )
+
+        if looks_like_clarification_request(answer_str):
+            key = f"followup::{question.strip()}"
+            new_counts, n = bump_counter(state.get("clarification_counts"), key)
+
+            # Too many clarification requests => bypass the question and move on.
+            if n > MAX_EXPLANATION_REQUESTS_PER_QUESTION:
+                answers[question] = BYPASSED_ANSWER_VALUE
+                return Command(
+                    update={
+                        "clarification_counts": new_counts,
+                        "followup_answers": answers,
+                        "followup_index": idx + 1,
+                        "ui_reasoning_title": "Follow-up — bypassed",
+                        "ui_reasoning_summary": (
+                            f"- You requested clarification **{n}** times for the same question.\n"
+                            "- To keep the workflow moving, we bypassed this question for now and moved on."
+                        ),
+                        "messages": [
+                            {
+                                "role": "assistant",
+                                "content": (
+                                    "I’ve explained this question several times already. "
+                                    "To keep moving, I’m going to bypass it for now and continue to the next item. "
+                                    "If you later want to revisit it, you can provide additional details during the update cycle before final review."
+                                ),
+                            }
+                        ],
+                        "audit_log": [
+                            make_event(
+                                "followup_bypassed_after_clarifications",
+                                {"index": idx, "q_preview": question[:80], "clarify_count": n},
+                            )
+                        ],
+                    },
+                    goto="followup",
+                )
+
+            # Provide an explanation and re-ask.
+            try:
+                clarification = llm.clarify_question(
+                    question=question,
+                    user_request=answer_str,
+                    context={"index": idx, "total": len(followups), "step": "followup"},
+                )
+            except Exception:
+                clarification = (
+                    "Sure — I can clarify.\n\n"
+                    "- This question is asking you to provide specific details/evidence.\n"
+                    "- Please answer with 1–3 short bullets, and include concrete mechanisms/controls where possible.\n\n"
+                    "I’ll re-ask the question next."
+                )
+
+            remaining = MAX_EXPLANATION_REQUESTS_PER_QUESTION - n
+            remaining_line = (
+                f"(You can ask for clarification {remaining} more time(s) for this question before we bypass it.)"
+                if remaining > 0
+                else "(If you ask for clarification again on this same question, we will bypass it to keep moving.)"
+            )
+
+            return Command(
+                update={
+                    "clarification_counts": new_counts,
+                    "ui_reasoning_title": "Follow-up — clarification",
+                    "ui_reasoning_summary": (
+                        f"- You asked for clarification instead of answering the question (attempt {n}/{MAX_EXPLANATION_REQUESTS_PER_QUESTION}).\n"
+                        "- I provided an explanation and will re-ask the same question next.\n"
+                        f"- {remaining_line}"
+                    ),
+                    "messages": [
+                        {
+                            "role": "assistant",
+                            "content": clarification,
+                        }
+                    ],
+                    "audit_log": [
+                        make_event(
+                            "followup_clarification_provided",
+                            {"index": idx, "q_preview": question[:80], "clarify_count": n},
+                        )
+                    ],
+                },
+                goto="followup",
+            )
 
         answers[question] = answer_str
 

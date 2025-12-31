@@ -121,6 +121,11 @@ class TSGState(TypedDict, total=False):
     followup_index: int
     followup_answers: Dict[str, Any]
 
+    # clarification handling
+    # Tracks how many times a user has requested explanation for a given question.
+    # Keyed by a stable question identifier (e.g., "followup::<question>", "intake::<field>").
+    clarification_counts: Dict[str, int]
+
     # diagram shortcut approach
     process_description: Optional[str]
     flowchart_mermaid: Optional[str]
@@ -176,6 +181,7 @@ def new_case_state(case_id: Optional[str] = None) -> TSGState:
         "checklist_report": None,
         "followup_index": 0,
         "followup_answers": {},
+        "clarification_counts": {},
         "process_description": None,
         "flowchart_mermaid": None,
         "flowchart_confirmed": False,

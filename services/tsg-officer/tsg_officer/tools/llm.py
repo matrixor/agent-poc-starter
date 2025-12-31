@@ -48,6 +48,20 @@ class LLMClient(Protocol):
         """
         ...
 
+    def clarify_question(
+        self,
+        *,
+        question: str,
+        user_request: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Explain key terms in a question and rewrite it in simpler form.
+
+        This is used when a user replies with "I don't understand" or "what does X mean?".
+        The return value should be safe to show to end users (no chain-of-thought).
+        """
+        ...
+
 
 @dataclass
 class MockLLMClient:
@@ -307,6 +321,83 @@ class MockLLMClient:
             lines.append("- Your answer has been recorded and will be used in the next workflow step.")
         return "\n".join(lines) if lines else "Response recorded."
 
+    def clarify_question(
+        self,
+        *,
+        question: str,
+        user_request: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Deterministic clarification helper for local/dev runs.
+
+        For production, a real LLM backend will provide richer, context-aware
+        explanations.
+        """
+
+        q = (question or "").strip()
+        q_l = q.lower()
+
+        # Hand-tuned definitions for common Enterprise AI Architecture dimensions.
+        dims = {
+            "reliability": "How consistently the integration works (uptime, retries, graceful degradation).",
+            "security": "How you protect data and access (authn/authz, encryption, secrets, network controls).",
+            "performance": "How fast it responds and scales (latency, throughput, concurrency, caching).",
+            "cost": "How you control and monitor spend (quotas, rate limits, budgets, usage alerts).",
+            "responsibility": "How you manage AI risk (privacy, bias, human oversight, auditability, compliance).",
+        }
+
+        # Hand-tuned definitions for common AI governance terms that show up in follow-ups.
+        common_terms = {
+            "hallucination": (
+                "An AI output that sounds plausible but is wrong or fabricated (e.g., inventing an API, producing incorrect code, or citing non-existent docs)."
+            ),
+            "hallucinations": (
+                "An AI output that sounds plausible but is wrong or fabricated (e.g., inventing an API, producing incorrect code, or citing non-existent docs)."
+            ),
+            "bias": "Systematic unfairness in outputs (e.g., suggestions that disadvantage certain groups or encode discriminatory assumptions).",
+            "harmful": "Outputs that could cause harm (e.g., insecure code, privacy violations, unsafe instructions, or inappropriate content).",
+            "escalation": "The defined process to report and resolve issues (who is notified, how incidents are triaged, and when security/legal/compliance review is required).",
+            "non-compliant": "Outputs or behavior that violate policy/standards (e.g., disallowed data use, missing approvals, prohibited content).",
+        }
+
+        mentioned = [k for k in dims.keys() if k in q_l]
+        # Also detect common governance terms in either the question or the user's request.
+        req_l = (user_request or "").lower()
+        term_hits = [k for k in common_terms.keys() if (k in q_l or k in req_l)]
+
+        lines: List[str] = []
+        lines.append("Sure — here's what that question is asking in plain language:")
+        if q:
+            lines.append(f"- **Original question:** {q}")
+
+        if mentioned or term_hits:
+            lines.append("")
+            lines.append("**Key terms (simple definitions):**")
+            for k in mentioned:
+                lines.append(f"- **{k.title()}**: {dims[k]}")
+            for k in term_hits:
+                # Keep title formatting stable and readable.
+                title = "Hallucinations" if k.startswith("hallucination") else k.replace("_", " ").title()
+                lines.append(f"- **{title}**: {common_terms[k]}")
+
+        lines.append("")
+        lines.append("**How to answer (template):**")
+        if mentioned:
+            for k in mentioned:
+                lines.append(f"- {k.title()}: <control/mechanism + how it works + how it's monitored>")
+        if term_hits:
+            # A simple governance-oriented template.
+            lines.append("- Detection: <how you catch bad/incorrect/unsafe outputs>")
+            lines.append("- Mitigation: <how you prevent/reduce recurrence>")
+            lines.append("- Escalation: <who is notified + timeline + stop/rollback controls>")
+        if not mentioned and not term_hits:
+            lines.append("- Provide concrete controls/mechanisms that address the objectives mentioned in the question.")
+
+        lines.append("")
+        lines.append("When you're ready, please answer the question again using the template above.")
+
+        return "\n".join(lines).strip()
+
 
 class OpenAIChatLLMClient:
     """Example LLM backend using LangChain's ChatOpenAI.
@@ -413,6 +504,36 @@ class OpenAIChatLLMClient:
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
         # Use a slightly higher temperature for readability.
+        resp = self._model(temperature=0.2).invoke(messages)
+        text = getattr(resp, "content", None) or str(resp)
+        return str(text).strip()
+
+    def clarify_question(
+        self,
+        *,
+        question: str,
+        user_request: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Explain a question + rewrite it for the user (no chain-of-thought)."""
+
+        payload = {
+            "question": question,
+            "user_request": user_request,
+            "context": context or {},
+        }
+        system = (
+            "You are an AI governance/compliance officer assistant. "
+            "The user did not understand a question. "
+            "Explain the question and any key terms in plain language. "
+            "Then rewrite the original question in a simpler way and provide a short answer template (bullets). "
+            "Be concise (<= 180 words). "
+            "Do NOT reveal chain-of-thought or internal deliberations."
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
         resp = self._model(temperature=0.2).invoke(messages)
         text = getattr(resp, "content", None) or str(resp)
         return str(text).strip()
@@ -734,6 +855,39 @@ class OpenAIResponsesLLMClient:
             "Write a concise 'reasoning summary' that is safe to show to end users. "
             "Do NOT reveal chain-of-thought or internal deliberations. "
             "Use 2–4 bullet points, plain language, max ~80 words."
+        )
+        resp = self._client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0.2,
+        )
+        text = resp.choices[0].message.content  # type: ignore[attr-defined]
+        return (text or "").strip()
+
+    def clarify_question(
+        self,
+        *,
+        question: str,
+        user_request: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Explain a question + rewrite it for the user (no chain-of-thought)."""
+
+        payload = {
+            "question": question,
+            "user_request": user_request,
+            "context": context or {},
+        }
+        system = (
+            "You are an AI governance/compliance officer assistant. "
+            "The user did not understand a question. "
+            "Explain the question and any key terms in plain language. "
+            "Then rewrite the original question in a simpler way and provide a short answer template (bullets). "
+            "Be concise (<= 180 words). "
+            "Do NOT reveal chain-of-thought or internal deliberations."
         )
         resp = self._client.chat.completions.create(
             model=self.model_name,
