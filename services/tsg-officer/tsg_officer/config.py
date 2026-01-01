@@ -56,7 +56,39 @@ class Settings:
         openai_model = os.getenv("TSG_OPENAI_MODEL", "gpt-4o-mini").strip()
 
         # ChubbGPT provider settings (only used when llm_provider=chubbgpt)
+        default_proxy = (
+            "https://studiogateway.chubb.com/enterprise.data.nouiglobalaimopschubbgpt/openai/experimental/"
+        )
         chubbgpt_proxy_url = os.getenv("TSG_CHUBBGPT_PROXY_URL", "").strip()
+
+        # Fix for legacy/incorrect proxy URL
+        if "api-chubbgpt-na.global-ai-ml-ops.chubbdigital.com" in chubbgpt_proxy_url:
+            chubbgpt_proxy_url = default_proxy
+
+        # Fix for common misconfiguration: users often paste the gateway "base" URL
+        # (ending at .../enterprise.data....chubbgpt/) instead of the inference route.
+        # If it looks like the ChubbGPT gateway and doesn't already target an OpenAI-style
+        # endpoint, append the canonical inference path.
+        if chubbgpt_proxy_url:
+            normalized = chubbgpt_proxy_url.rstrip("/")
+            looks_like_gateway = "enterprise.data.nouiglobalaimopschubbgpt" in normalized
+            looks_like_openai_endpoint = any(
+                token in normalized.lower()
+                for token in (
+                    "/openai/",
+                    "/v1/",
+                    "/chat/completions",
+                    "/completions",
+                    "/responses",
+                )
+            )
+
+            if looks_like_gateway and not looks_like_openai_endpoint:
+                chubbgpt_proxy_url = normalized + "/openai/experimental/"
+
+        if not chubbgpt_proxy_url:
+            chubbgpt_proxy_url = default_proxy
+            
         chubbgpt_auth_url = os.getenv(
             "TSG_CHUBBGPT_AUTH_URL",
             "https://studiogateway.chubb.com/enterprise.operations.authorization?Identity=AAD",

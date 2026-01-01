@@ -1292,7 +1292,14 @@ class ChubbGPTLLMClient:
             or path.endswith("/responses")
         )
 
-    def _chat(self, *, messages: List[Dict[str, str]], max_tokens: int = 4096, temperature: float = 0.0) -> str:
+    def _chat(
+        self,
+        *,
+        messages: List[Dict[str, str]],
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        stop: Optional[str] = None,
+    ) -> str:
         """Send a chat payload and return assistant text."""
 
         # Lazily acquire token.
@@ -1315,7 +1322,8 @@ class ChubbGPTLLMClient:
             "Authorization": self._auth_token,
         }
 
-        if self._is_openai_compatible_endpoint():
+        is_openai = self._is_openai_compatible_endpoint()
+        if is_openai:
             payload = {
                 "model": self.model_name,
                 "messages": messages,
@@ -1323,6 +1331,8 @@ class ChubbGPTLLMClient:
                 "temperature": float(temperature),
                 "n": 1,
             }
+            if stop:
+                payload["stop"] = stop
         else:
             payload = {
                 "username": self.username,
@@ -1331,14 +1341,19 @@ class ChubbGPTLLMClient:
                 "n": 1,
                 "frequency_penalty": 0,
                 "presence_penalty": 0,
-                # Many gateways ignore temperature/top_p; include for compatibility.
-                "temperature": float(temperature),
                 "messages": messages,
             }
+
+            # Some models (including the gateway model used here) reject `stop`.
+            # Only include it when explicitly requested.
+            if stop is not None:
+                payload["stop"] = stop
 
         # Minimal retry loop:
         # - Refresh token on 401
         # - Backoff on 429
+        # - Remove unsupported `stop` on known error
+        removed_stop_once = False
         backoff_s = 1.0
         for attempt in range(6):
             resp = self._requests.post(url, headers=headers, data=json.dumps(payload), timeout=self.timeout_s)
@@ -1354,9 +1369,40 @@ class ChubbGPTLLMClient:
                 backoff_s = min(backoff_s * 2.0, 16.0)
                 continue
 
+            # Some gateway models don't support `stop`. If we hit that known error,
+            # retry once without the parameter.
+            if (
+                resp.status_code == 400
+                and not removed_stop_once
+                and isinstance(payload, dict)
+                and "stop" in payload
+            ):
+                try:
+                    text_l = (resp.text or "").lower()
+                except Exception:
+                    text_l = ""
+
+                if "unsupported parameter" in text_l and "stop" in text_l:
+                    payload = dict(payload)
+                    payload.pop("stop", None)
+                    removed_stop_once = True
+                    continue
+
             if resp.status_code >= 400:
-                # Avoid returning full response (may include internal details).
-                raise ValueError(f"ChubbGPT request failed ({resp.status_code}).")
+                # Keep the message small; include URL + a short body snippet to aid debugging.
+                snippet = ""
+                try:
+                    text = (resp.text or "").strip()
+                    if text:
+                        text = " ".join(text.split())
+                        snippet = text[:300]
+                except Exception:
+                    snippet = ""
+
+                details = f"ChubbGPT request failed ({resp.status_code}). URL={url}"
+                if snippet:
+                    details += f" Body={snippet}"
+                raise ValueError(details)
 
             # Success
             data = {}
@@ -1402,7 +1448,44 @@ class ChubbGPTLLMClient:
             {"role": "user", "content": user_text or ""},
         ]
         raw = self._chat(messages=messages, max_tokens=512, temperature=0.0)
-        data = _extract_first_json_object(raw)
+        try:
+            data = _extract_first_json_object(raw)
+        except Exception:
+            raw_s = str(raw or "").strip()
+            raw_l = raw_s.lower()
+
+            # If the model didn't return JSON, try to extract one or more known labels.
+            patterns: List[tuple[str, str]] = [
+                ("consumer of internal ai", "Consumer of Internal AI"),
+                ("consumer of external ai", "Consumer of External AI"),
+                ("internal ai builder", "Internal AI Builder"),
+                ("building_permit", "building_permit"),
+                ("building permit", "building_permit"),
+                ("tsg_general", "tsg_general"),
+                ("tsg general", "tsg_general"),
+            ]
+
+            hits: List[tuple[int, str]] = []
+            for needle, label in patterns:
+                idx = raw_l.find(needle)
+                if idx != -1:
+                    hits.append((idx, label))
+
+            hits.sort(key=lambda t: t[0])
+            labels_out: List[str] = []
+            seen: set[str] = set()
+            for _, label in hits:
+                if label in seen:
+                    continue
+                seen.add(label)
+                labels_out.append(label)
+
+            application_type = ", ".join(labels_out) if labels_out else (raw_s.strip('"') or "tsg_general")
+            data = {
+                "application_type": application_type,
+                "confidence": 0.6,
+                "rationale": raw_s[:500],
+            }
         # Normalize confidence + required fields
         data.setdefault("application_type", "tsg_general")
         data["confidence"] = _normalize_confidence(data.get("confidence"), default=0.6)
@@ -1442,7 +1525,10 @@ class ChubbGPTLLMClient:
             },
         ]
         raw = self._chat(messages=messages, max_tokens=4096, temperature=0.0)
-        data = _extract_first_json_object(raw)
+        try:
+            data = _extract_first_json_object(raw)
+        except Exception:
+            data = {}
         data = _normalize_checklist_report_dict(data, case_id=case_id, application_type=application_type)
         return ChecklistReportModel(**data)
 
@@ -1458,7 +1544,10 @@ class ChubbGPTLLMClient:
             {"role": "user", "content": process_description or ""},
         ]
         raw = self._chat(messages=messages, max_tokens=1024, temperature=0.0)
-        data = _extract_first_json_object(raw)
+        try:
+            data = _extract_first_json_object(raw)
+        except Exception:
+            data = {}
         # Minimal defaults to avoid validation errors
         data.setdefault("mermaid", "flowchart TD\n  A[Describe the process] --> B[Add steps]\n")
         data.setdefault("title", "Process Flow")
