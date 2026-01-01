@@ -39,6 +39,8 @@ def build_dependencies(settings: Settings) -> Tuple[LLMClient, YamlRuleRepositor
     elif settings.llm_provider == "chubbgpt":
         llm = ChubbGPTLLMClient(
             model=settings.chubbgpt_model or settings.openai_model,
+            checklist_model=settings.chubbgpt_checklist_model or settings.chubbgpt_model or settings.openai_model,
+            reasoning_model=settings.chubbgpt_reasoning_model or settings.chubbgpt_model or settings.openai_model,
             proxy_url=settings.chubbgpt_proxy_url,
             auth_url=settings.chubbgpt_auth_url,
             api_version=settings.chubbgpt_api_version,

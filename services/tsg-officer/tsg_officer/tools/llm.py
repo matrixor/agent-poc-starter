@@ -1147,12 +1147,16 @@ class ChubbGPTLLMClient:
         TSG_CHUBBGPT_AUTH_URL (optional)
         TSG_CHUBBGPT_API_VERSION (optional)
         TSG_CHUBBGPT_MODEL (optional)
+        TSG_CHUBBGPT_CHECKLIST_MODEL (optional)
+        TSG_CHUBBGPT_REASONING_MODEL (optional)
     """
 
     def __init__(
         self,
         *,
         model: str,
+        checklist_model: Optional[str] = None,
+        reasoning_model: Optional[str] = None,
         proxy_url: str,
         auth_url: str,
         api_version: str,
@@ -1194,7 +1198,12 @@ class ChubbGPTLLMClient:
             )
 
         self._requests = requests
-        self.model_name = model
+        self.model_name = (model or "").strip()
+        if not self.model_name:
+            self.model_name = "gpt-4o"
+
+        self.checklist_model_name = (checklist_model or self.model_name).strip() or self.model_name
+        self.reasoning_model_name = (reasoning_model or self.model_name).strip() or self.model_name
         self.proxy_url = proxy_url
         self.auth_url = auth_url
         self.api_version = (api_version or "1").strip() or "1"
@@ -1299,8 +1308,11 @@ class ChubbGPTLLMClient:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         stop: Optional[str] = None,
+        model_override: Optional[str] = None,
     ) -> str:
         """Send a chat payload and return assistant text."""
+
+        selected_model = (model_override or self.model_name).strip() or self.model_name
 
         # Lazily acquire token.
         if not self._auth_token:
@@ -1311,7 +1323,7 @@ class ChubbGPTLLMClient:
             url = self.proxy_url
         else:
             # ChubbGPT-style router: model + other routing are in query params.
-            url = self._build_proxy_url(model=self.model_name)
+            url = self._build_proxy_url(model=selected_model)
 
         headers = {
             "Content-Type": "application/json",
@@ -1325,7 +1337,7 @@ class ChubbGPTLLMClient:
         is_openai = self._is_openai_compatible_endpoint()
         if is_openai:
             payload = {
-                "model": self.model_name,
+                "model": selected_model,
                 "messages": messages,
                 "max_tokens": int(max_tokens),
                 "temperature": float(temperature),
@@ -1524,7 +1536,12 @@ class ChubbGPTLLMClient:
                 ),
             },
         ]
-        raw = self._chat(messages=messages, max_tokens=4096, temperature=0.0)
+        raw = self._chat(
+            messages=messages,
+            max_tokens=4096,
+            temperature=0.0,
+            model_override=self.checklist_model_name,
+        )
         try:
             data = _extract_first_json_object(raw)
         except Exception:
@@ -1579,7 +1596,12 @@ class ChubbGPTLLMClient:
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
-        return self._chat(messages=messages, max_tokens=256, temperature=0.2)
+        return self._chat(
+            messages=messages,
+            max_tokens=256,
+            temperature=0.2,
+            model_override=self.reasoning_model_name,
+        )
 
     def clarify_question(
         self,

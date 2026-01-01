@@ -41,6 +41,10 @@ class Settings:
     chubbgpt_app_key: str = ""
     chubbgpt_resource: str = ""
     chubbgpt_model: str = ""
+    # Optional: allow different models for different tasks when using ChubbGPT.
+    # If unset, these fall back to chubbgpt_model.
+    chubbgpt_checklist_model: str = ""
+    chubbgpt_reasoning_model: str = ""
     checkpoint_db: str = "./.tsg_checkpoints.sqlite"
     # Optional override for the rules YAML file.
     # If unset, the app defaults to data/rules/rules.v1.yaml inside the package.
@@ -100,6 +104,16 @@ class Settings:
         # If a dedicated model name is not supplied for ChubbGPT, fall back to the OpenAI model.
         chubbgpt_model = os.getenv("TSG_CHUBBGPT_MODEL", "").strip() or openai_model
 
+        # Optional dual-model routing.
+        # - checklist_model is used for checklist evaluation (generate_checklist_report)
+        # - reasoning_model is used for end-user-safe reasoning summaries (summarize_reasoning)
+        chubbgpt_checklist_model = (
+            os.getenv("TSG_CHUBBGPT_CHECKLIST_MODEL", "").strip() or chubbgpt_model
+        )
+        chubbgpt_reasoning_model = (
+            os.getenv("TSG_CHUBBGPT_REASONING_MODEL", "").strip() or chubbgpt_model
+        )
+
         checkpoint_db = os.getenv("TSG_CHECKPOINT_DB", "./.tsg_checkpoints.sqlite").strip()
         if not checkpoint_db:
             checkpoint_db = "./.tsg_checkpoints.sqlite"
@@ -119,6 +133,8 @@ class Settings:
             chubbgpt_app_key=chubbgpt_app_key,
             chubbgpt_resource=chubbgpt_resource,
             chubbgpt_model=chubbgpt_model,
+            chubbgpt_checklist_model=chubbgpt_checklist_model,
+            chubbgpt_reasoning_model=chubbgpt_reasoning_model,
             checkpoint_db=checkpoint_db,
             rules_path=rules_path,
         )
